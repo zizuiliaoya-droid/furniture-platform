@@ -1,0 +1,86 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e6]: 家具软装管理
+      - menu [ref=e7]:
+        - menuitem "home 首页" [ref=e8] [cursor=pointer]:
+          - img "home" [ref=e9]:
+            - img [ref=e10]
+          - generic [ref=e12]: 首页
+        - menuitem "shopping 产品管理" [ref=e13] [cursor=pointer]:
+          - img "shopping" [ref=e14]:
+            - img [ref=e15]
+          - generic [ref=e17]: 产品管理
+        - menuitem "appstore 分类管理" [ref=e18] [cursor=pointer]:
+          - img "appstore" [ref=e19]:
+            - img [ref=e20]
+          - generic [ref=e22]: 分类管理
+        - menuitem "picture 产品图册" [ref=e23] [cursor=pointer]:
+          - img "picture" [ref=e24]:
+            - img [ref=e25]
+          - generic [ref=e27]: 产品图册
+        - menuitem "book 客户案例" [ref=e28] [cursor=pointer]:
+          - img "book" [ref=e29]:
+            - img [ref=e30]
+          - generic [ref=e32]: 客户案例
+        - menuitem "file-text 内部文档" [ref=e33] [cursor=pointer]:
+          - img "file-text" [ref=e34]:
+            - img [ref=e35]
+          - generic [ref=e37]: 内部文档
+        - menuitem "dollar 报价方案" [ref=e38] [cursor=pointer]:
+          - img "dollar" [ref=e39]:
+            - img [ref=e40]
+          - generic [ref=e42]: 报价方案
+        - menuitem "share-alt 分享管理" [ref=e43] [cursor=pointer]:
+          - img "share-alt" [ref=e44]:
+            - img [ref=e45]
+          - generic [ref=e47]: 分享管理
+        - menuitem "team 用户管理" [ref=e48] [cursor=pointer]:
+          - img "team" [ref=e49]:
+            - img [ref=e50]
+          - generic [ref=e52]: 用户管理
+  - generic [ref=e53]:
+    - banner [ref=e54]:
+      - generic [ref=e55]:
+        - img "search" [ref=e57]:
+          - img [ref=e58]
+        - textbox "搜索产品、案例、文档、报价..." [ref=e60]
+      - generic [ref=e62]:
+        - generic [ref=e63]: 系统管理员
+        - button "logout 退出" [ref=e65] [cursor=pointer]:
+          - img "logout" [ref=e67]:
+            - img [ref=e68]
+          - generic [ref=e70]: 退出
+    - main [ref=e71]:
+      - generic [ref=e72]:
+        - generic [ref=e73]:
+          - heading "客户案例" [level=4] [ref=e75]
+          - button "plus 新建案例" [ref=e77] [cursor=pointer]:
+            - img "plus" [ref=e79]:
+              - img [ref=e80]
+            - generic [ref=e83]: 新建案例
+        - generic [ref=e84] [cursor=pointer]:
+          - generic [ref=e86]:
+            - combobox [ref=e88]
+            - generic: 行业筛选
+          - generic:
+            - img:
+              - img
+        - generic [ref=e90]:
+          - generic:
+            - generic:
+              - generic:
+                - generic:
+                  - table:
+                    - rowgroup:
+                      - row "标题 行业 创建时间":
+                        - columnheader "标题"
+                        - columnheader "行业"
+                        - columnheader "创建时间"
+                    - rowgroup:
+                      - row "暂无数据 暂无数据":
+                        - cell "暂无数据 暂无数据":
+                          - generic:
+                            - generic:
+                              - img "暂无数据"
+                            - generic: 暂无数据

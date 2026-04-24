@@ -1,0 +1,92 @@
+/* ============================================================
+   智楷家具 – Global dark-mode styles
+   ============================================================ */
+
+/* ---- CSS custom properties (design tokens) ---- */
+:root {
+  --bg-base: #161b26;
+  --bg-surface: #1e2433;
+  --bg-elevated: #252b3b;
+  --bg-hover: #2a3245;
+
+  --text-emphasis: rgba(255,255,255,0.87);
+  --text-body: rgba(255,255,255,0.60);
+  --text-hint: rgba(255,255,255,0.38);
+
+  --border-default: rgba(255,255,255,0.12);
+  --border-subtle: rgba(255,255,255,0.08);
+
+  --accent-primary: #6b8acd;
+  --accent-success: #6dae82;
+  --accent-warning: #d4a44a;
+  --accent-error: #cf6b6b;
+  --accent-info: #5fa8d3;
+}
+
+/* ---- Self-hosted fonts for NAS offline support ---- */
+@font-face { font-family: 'DM Sans'; src: local('DM Sans'); font-display: swap; }
+@font-face { font-family: 'Inter'; src: local('Inter'); font-display: swap; }
+@font-face { font-family: 'Noto Sans SC'; src: local('Noto Sans SC'); font-display: swap; }
+
+/* ---- Reset ---- */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body, #root {
+  min-height: 100vh;
+}
+
+body {
+  font-family: 'DM Sans', 'Inter', 'Noto Sans SC', -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  background: var(--bg-base);
+  color: var(--text-emphasis);
+}
+
+/* ---- Scrollbar (dark) ---- */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.20); }
+
+/* ---- Micro-interactions ---- */
+.ant-btn { transition: all 0.2s ease; }
+.ant-btn:hover { transform: scale(1.02); }
+.ant-btn:active { transform: scale(0.98); }
+
+.ant-card {
+  transition: box-shadow 0.3s ease, transform 0.3s ease;
+}
+.ant-card:hover {
+  box-shadow: 0 4px 24px rgba(0,0,0,0.32);
+  transform: translateY(-1px);
+}
+
+/* ---- Ant overrides for dark mode ---- */
+.ant-layout { background: var(--bg-base) !important; }
+
+/* Table text */
+.ant-table { color: var(--text-emphasis); }
+.ant-table-thead > tr > th { color: var(--text-body) !important; }
+
+/* Descriptions label */
+.ant-descriptions-item-label { color: var(--text-body) !important; }
+
+/* Empty state */
+.ant-empty-description { color: var(--text-hint) !important; }
+
+/* Dropdown */
+.ant-dropdown-menu { background: var(--bg-elevated) !important; }
+.ant-dropdown-menu-item { color: var(--text-emphasis) !important; }
+.ant-dropdown-menu-item:hover { background: var(--bg-hover) !important; }
+
+/* Modal */
+.ant-modal-content { background: var(--bg-surface) !important; }
+.ant-modal-header { background: var(--bg-surface) !important; border-bottom-color: var(--border-subtle) !important; }
+.ant-modal-title { color: var(--text-emphasis) !important; }
+
+/* Message */
+.ant-message-notice-content { background: var(--bg-elevated) !important; color: var(--text-emphasis) !important; }
+
+/* Popconfirm */
+.ant-popover-inner { background: var(--bg-elevated) !important; }
+.ant-popconfirm-message-text { color: var(--text-emphasis) !important; }

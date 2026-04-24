@@ -1,0 +1,133 @@
+/* ============================================================
+   Login Page – Dark theme with interactive desk-lamp
+   ============================================================ */
+
+/* ---- Page container ---- */
+.login-page {
+  min-height: 100vh;
+  background: #161b26;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 60px;
+  padding: 40px;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Subtle radial glow behind everything when lamp is on */
+.login-page::before {
+  content: '';
+  position: absolute;
+  top: 40%;
+  left: 50%;
+  width: 800px;
+  height: 800px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    hsla(var(--shade-hue, 200), 60%, 50%, calc(0.06 * var(--on, 0))) 0%,
+    transparent 70%
+  );
+  pointer-events: none;
+  transition: opacity 0.6s;
+}
+
+/* ---- Lamp SVG ---- */
+.lamp-svg {
+  flex-shrink: 0;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ---- Login card ---- */
+.login-card {
+  background: #1e2433;
+  border-radius: 12px;
+  padding: 40px 36px;
+  width: 380px;
+  max-width: 90vw;
+  border: 1px solid transparent;
+  transition:
+    opacity 0.6s cubic-bezier(0.34, 1.56, 0.64, 1),
+    transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1),
+    border-color 0.4s,
+    box-shadow 0.4s;
+}
+
+/* ---- Inputs ---- */
+.login-input,
+.login-input input,
+.login-card .ant-input-affix-wrapper,
+.login-card .ant-input-password {
+  background: #252b3b !important;
+  border: 1px solid rgba(255,255,255,0.12) !important;
+  color: #fff !important;
+  border-radius: 6px !important;
+  transition: border-color 0.3s, box-shadow 0.3s !important;
+}
+
+.login-card .ant-input-affix-wrapper:focus,
+.login-card .ant-input-affix-wrapper-focused,
+.login-card .ant-input-affix-wrapper:focus-within {
+  border-color: var(--focus-color, #5a9) !important;
+  box-shadow: 0 0 10px var(--focus-glow, #5a9) !important;
+}
+
+.login-card .ant-input::placeholder {
+  color: #666 !important;
+}
+
+/* Password toggle icon */
+.login-card .ant-input-password-icon {
+  color: #666 !important;
+}
+.login-card .ant-input-password-icon:hover {
+  color: #999 !important;
+}
+
+/* ---- Login button ---- */
+.login-btn {
+  height: 44px !important;
+  font-size: 15px !important;
+  font-weight: 600 !important;
+  border-radius: 6px !important;
+  transition: filter 0.2s, transform 0.15s !important;
+}
+.login-btn:hover {
+  filter: brightness(1.15) !important;
+  transform: scale(1.02) !important;
+}
+.login-btn:active {
+  transform: scale(0.98) !important;
+}
+
+/* ---- Forgot password link ---- */
+.forgot-link {
+  color: #666 !important;
+  cursor: pointer !important;
+  transition: color 0.2s !important;
+  font-size: 13px !important;
+}
+.forgot-link:hover {
+  color: #999 !important;
+}
+
+/* ---- Responsive ---- */
+@media (max-width: 768px) {
+  .login-page {
+    flex-direction: column;
+    gap: 30px;
+    padding: 24px;
+  }
+  .login-card {
+    width: 100%;
+    padding: 32px 24px;
+  }
+  .lamp-svg {
+    width: 160px;
+    height: auto;
+  }
+}

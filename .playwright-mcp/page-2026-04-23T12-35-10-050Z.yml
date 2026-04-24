@@ -1,0 +1,88 @@
+- generic [ref=e54]:
+  - complementary [ref=e55]:
+    - generic [ref=e56]:
+      - generic [ref=e57]: 家具软装管理
+      - menu [ref=e58]:
+        - menuitem "home 首页" [ref=e59] [cursor=pointer]:
+          - img "home" [ref=e60]:
+            - img [ref=e61]
+          - generic [ref=e63]: 首页
+        - menuitem "shopping 产品管理" [active] [ref=e64] [cursor=pointer]:
+          - img "shopping" [ref=e65]:
+            - img [ref=e66]
+          - generic [ref=e68]: 产品管理
+        - menuitem "appstore 分类管理" [ref=e69] [cursor=pointer]:
+          - img "appstore" [ref=e70]:
+            - img [ref=e71]
+          - generic [ref=e73]: 分类管理
+        - menuitem "picture 产品图册" [ref=e74] [cursor=pointer]:
+          - img "picture" [ref=e75]:
+            - img [ref=e76]
+          - generic [ref=e78]: 产品图册
+        - menuitem "book 客户案例" [ref=e79] [cursor=pointer]:
+          - img "book" [ref=e80]:
+            - img [ref=e81]
+          - generic [ref=e83]: 客户案例
+        - menuitem "file-text 内部文档" [ref=e84] [cursor=pointer]:
+          - img "file-text" [ref=e85]:
+            - img [ref=e86]
+          - generic [ref=e88]: 内部文档
+        - menuitem "dollar 报价方案" [ref=e89] [cursor=pointer]:
+          - img "dollar" [ref=e90]:
+            - img [ref=e91]
+          - generic [ref=e93]: 报价方案
+        - menuitem "share-alt 分享管理" [ref=e94] [cursor=pointer]:
+          - img "share-alt" [ref=e95]:
+            - img [ref=e96]
+          - generic [ref=e98]: 分享管理
+        - menuitem "team 用户管理" [ref=e99] [cursor=pointer]:
+          - img "team" [ref=e100]:
+            - img [ref=e101]
+          - generic [ref=e103]: 用户管理
+  - generic [ref=e104]:
+    - banner [ref=e105]:
+      - generic [ref=e106]:
+        - img "search" [ref=e108]:
+          - img [ref=e109]
+        - textbox "搜索产品、案例、文档、报价..." [ref=e111]
+      - generic [ref=e113]:
+        - generic [ref=e114]: 系统管理员
+        - button "logout 退出" [ref=e116] [cursor=pointer]:
+          - img "logout" [ref=e118]:
+            - img [ref=e119]
+          - generic [ref=e121]: 退出
+    - main [ref=e122]:
+      - generic [ref=e227]:
+        - generic [ref=e228]:
+          - heading "产品管理" [level=4] [ref=e230]
+          - button "plus 新建产品" [ref=e232] [cursor=pointer]:
+            - img "plus" [ref=e234]:
+              - img [ref=e235]
+            - generic [ref=e238]: 新建产品
+        - generic [ref=e239]:
+          - generic [ref=e242]:
+            - searchbox "搜索产品..." [ref=e244]
+            - button "search" [ref=e247] [cursor=pointer]:
+              - img "search" [ref=e249]:
+                - img [ref=e250]
+          - generic [ref=e253] [cursor=pointer]:
+            - generic [ref=e255]:
+              - combobox [ref=e257]
+              - generic: 产地
+            - generic:
+              - img:
+                - img
+        - table [ref=e264]:
+          - rowgroup [ref=e265]:
+            - row "名称 编号 产地 最低售价 状态" [ref=e266]:
+              - columnheader "名称" [ref=e267]
+              - columnheader "编号" [ref=e268]
+              - columnheader "产地" [ref=e269]
+              - columnheader "最低售价" [ref=e270]
+              - columnheader "状态" [ref=e271]
+          - rowgroup [ref=e272]:
+            - row "暂无数据 暂无数据" [ref=e273]:
+              - cell "暂无数据 暂无数据" [ref=e274]:
+                - generic [ref=e275]:
+                  - img "暂无数据" [ref=e277]
+                  - generic [ref=e283]: 暂无数据

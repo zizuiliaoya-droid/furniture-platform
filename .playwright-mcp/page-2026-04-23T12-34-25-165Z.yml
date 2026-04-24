@@ -1,0 +1,113 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e54]:
+    - complementary [ref=e55]:
+      - generic [ref=e56]:
+        - generic [ref=e57]: 家具软装管理
+        - menu [ref=e58]:
+          - menuitem "home 首页" [ref=e59] [cursor=pointer]:
+            - img "home" [ref=e60]:
+              - img [ref=e61]
+            - generic [ref=e63]: 首页
+          - menuitem "shopping 产品管理" [ref=e64] [cursor=pointer]:
+            - img "shopping" [ref=e65]:
+              - img [ref=e66]
+            - generic [ref=e68]: 产品管理
+          - menuitem "appstore 分类管理" [ref=e69] [cursor=pointer]:
+            - img "appstore" [ref=e70]:
+              - img [ref=e71]
+            - generic [ref=e73]: 分类管理
+          - menuitem "picture 产品图册" [ref=e74] [cursor=pointer]:
+            - img "picture" [ref=e75]:
+              - img [ref=e76]
+            - generic [ref=e78]: 产品图册
+          - menuitem "book 客户案例" [ref=e79] [cursor=pointer]:
+            - img "book" [ref=e80]:
+              - img [ref=e81]
+            - generic [ref=e83]: 客户案例
+          - menuitem "file-text 内部文档" [ref=e84] [cursor=pointer]:
+            - img "file-text" [ref=e85]:
+              - img [ref=e86]
+            - generic [ref=e88]: 内部文档
+          - menuitem "dollar 报价方案" [ref=e89] [cursor=pointer]:
+            - img "dollar" [ref=e90]:
+              - img [ref=e91]
+            - generic [ref=e93]: 报价方案
+          - menuitem "share-alt 分享管理" [ref=e94] [cursor=pointer]:
+            - img "share-alt" [ref=e95]:
+              - img [ref=e96]
+            - generic [ref=e98]: 分享管理
+          - menuitem "team 用户管理" [ref=e99] [cursor=pointer]:
+            - img "team" [ref=e100]:
+              - img [ref=e101]
+            - generic [ref=e103]: 用户管理
+    - generic [ref=e104]:
+      - banner [ref=e105]:
+        - generic [ref=e106]:
+          - img "search" [ref=e108]:
+            - img [ref=e109]
+          - textbox "搜索产品、案例、文档、报价..." [ref=e111]
+        - generic [ref=e113]:
+          - generic [ref=e114]: 系统管理员
+          - button "logout 退出" [ref=e116] [cursor=pointer]:
+            - img "logout" [ref=e118]:
+              - img [ref=e119]
+            - generic [ref=e121]: 退出
+      - main [ref=e122]:
+        - generic [ref=e123]:
+          - heading "仪表盘" [level=4] [ref=e124]
+          - generic [ref=e125]:
+            - generic [ref=e129] [cursor=pointer]:
+              - generic [ref=e130]: 产品总数
+              - generic [ref=e131]:
+                - img "shopping" [ref=e133]:
+                  - img [ref=e134]
+                - generic [ref=e136]: "0"
+            - generic [ref=e140] [cursor=pointer]:
+              - generic [ref=e141]: 案例总数
+              - generic [ref=e142]:
+                - img "book" [ref=e144]:
+                  - img [ref=e145]
+                - generic [ref=e147]: "0"
+            - generic [ref=e151] [cursor=pointer]:
+              - generic [ref=e152]: 报价单总数
+              - generic [ref=e153]:
+                - img "dollar" [ref=e155]:
+                  - img [ref=e156]
+                - generic [ref=e158]: "0"
+            - generic [ref=e162] [cursor=pointer]:
+              - generic [ref=e163]: 文档总数
+              - generic [ref=e164]:
+                - img "file-text" [ref=e166]:
+                  - img [ref=e167]
+                - generic [ref=e169]: "0"
+          - generic [ref=e170]:
+            - generic [ref=e173]: 本月新增
+            - generic [ref=e175]:
+              - generic [ref=e177]:
+                - generic [ref=e178]: 新增产品
+                - generic [ref=e180]: "0"
+              - generic [ref=e182]:
+                - generic [ref=e183]: 新增案例
+                - generic [ref=e185]: "0"
+              - generic [ref=e187]:
+                - generic [ref=e188]: 新增报价
+                - generic [ref=e190]: "0"
+          - generic [ref=e191]:
+            - generic [ref=e194]: 最近活动
+            - table [ref=e202]:
+              - rowgroup [ref=e203]:
+                - row "报价单 客户 状态 更新时间" [ref=e204]:
+                  - columnheader "报价单" [ref=e205]
+                  - columnheader "客户" [ref=e206]
+                  - columnheader "状态" [ref=e207]
+                  - columnheader "更新时间" [ref=e208]
+              - rowgroup [ref=e209]:
+                - row "暂无数据 暂无数据" [ref=e210]:
+                  - cell "暂无数据 暂无数据" [ref=e211]:
+                    - generic [ref=e212]:
+                      - img "暂无数据" [ref=e214]
+                      - generic [ref=e220]: 暂无数据
+  - generic [ref=e222]:
+    - img "check-circle" [ref=e223]:
+      - img [ref=e224]
+    - generic [ref=e226]: 登录成功

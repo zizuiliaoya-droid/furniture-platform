@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<style>
+  body { font-family: sans-serif; font-size: 12px; color: #333; }
+  h1 { font-size: 20px; text-align: center; margin-bottom: 20px; }
+  .info { margin-bottom: 15px; }
+  .info p { margin: 4px 0; }
+  table { width: 100%; border-collapse: collapse; margin: 15px 0; }
+  th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+  th { background: #f5f5f5; font-weight: bold; }
+  .total { text-align: right; font-size: 16px; font-weight: bold; margin: 15px 0; }
+  .notes { margin-top: 20px; padding: 10px; background: #fafafa; border-radius: 4px; }
+</style>
+</head>
+<body>
+<h1>{{ quote.title }}</h1>
+<div class="info">
+  <p><strong>客户：</strong>{{ quote.customer_name }}</p>
+  <p><strong>状态：</strong>{{ quote.get_status_display }}</p>
+  <p><strong>日期：</strong>{{ quote.created_at|date:"Y-m-d" }}</p>
+</div>
+<table>
+  <thead>
+    <tr>
+      <th>#</th><th>产品名称</th><th>配置</th>
+      <th>单价</th><th>数量</th><th>折扣(%)</th><th>小计</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for item in quote.items.all %}
+    <tr>
+      <td>{{ forloop.counter }}</td>
+      <td>{{ item.product_name }}</td>
+      <td>{{ item.config_name }}</td>
+      <td>¥{{ item.unit_price }}</td>
+      <td>{{ item.quantity }}</td>
+      <td>{{ item.discount }}%</td>
+      <td>¥{{ item.subtotal }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+<div class="total">总金额：¥{{ quote.total_amount }}</div>
+{% if quote.notes %}<div class="notes"><strong>备注：</strong>{{ quote.notes }}</div>{% endif %}
+{% if quote.terms %}<div class="notes"><strong>条款：</strong>{{ quote.terms }}</div>{% endif %}
+</body>
+</html>

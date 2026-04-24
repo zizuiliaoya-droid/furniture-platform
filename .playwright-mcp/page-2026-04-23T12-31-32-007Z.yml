@@ -1,0 +1,36 @@
+- generic [ref=e3]:
+  - img [ref=e4]
+  - generic:
+    - heading "欢迎回来" [level=3]
+    - generic:
+      - generic:
+        - generic:
+          - generic:
+            - generic:
+              - generic:
+                - generic:
+                  - generic:
+                    - img "user":
+                      - img
+                  - textbox "账号"
+      - generic:
+        - generic:
+          - generic:
+            - generic:
+              - generic:
+                - generic:
+                  - generic:
+                    - img "lock":
+                      - img
+                  - textbox "密码"
+                  - generic:
+                    - img "eye-invisible":
+                      - img
+      - generic:
+        - generic:
+          - generic:
+            - generic:
+              - generic:
+                - button "登 录":
+                  - generic: 登 录
+      - generic: 忘记密码？
