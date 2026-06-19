@@ -46,7 +46,8 @@ def share_content_view(request, token):
         })
     ShareService.log_access(share, request)
     content = ShareService.get_shared_content(share)
-    return Response({'title': share.title, **content})
+    branding = ShareService.get_branding()
+    return Response({'title': share.title, 'branding': branding, **content})
 
 
 @api_view(['POST'])
@@ -65,7 +66,8 @@ def share_verify_view(request, token):
         return Response({'detail': '密码错误'}, status=status.HTTP_400_BAD_REQUEST)
     ShareService.log_access(share, request)
     content = ShareService.get_shared_content(share)
-    return Response({'title': share.title, **content})
+    branding = ShareService.get_branding()
+    return Response({'title': share.title, 'branding': branding, **content})
 
 
 @api_view(['POST'])

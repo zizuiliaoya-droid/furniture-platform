@@ -23,12 +23,21 @@ class DocumentFolder(models.Model):
 
 
 class Document(models.Model):
+    RESOURCE_TYPE_CHOICES = [
+        ('FILE', '文件'),
+        ('RICH_TEXT', '富文本'),
+        ('VIDEO', '视频'),
+        ('AUDIO', '音频'),
+    ]
     name = models.CharField(max_length=300)
     doc_type = models.CharField(max_length=15, choices=DocumentFolder.DOC_TYPE_CHOICES)
+    resource_type = models.CharField(max_length=15, choices=RESOURCE_TYPE_CHOICES, default='FILE',
+                                     help_text='资源类型：文件/富文本/视频/音频')
+    content = models.TextField(blank=True, default='', help_text='富文本内容（resource_type=RICH_TEXT 时使用）')
     folder = models.ForeignKey(DocumentFolder, null=True, blank=True, on_delete=models.SET_NULL, related_name='documents')
-    file_path = models.CharField(max_length=500)
-    file_size = models.BigIntegerField()
-    mime_type = models.CharField(max_length=100)
+    file_path = models.CharField(max_length=500, blank=True, default='')
+    file_size = models.BigIntegerField(default=0)
+    mime_type = models.CharField(max_length=100, blank=True, default='')
     tags = models.JSONField(default=list, blank=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
     created_at = models.DateTimeField(auto_now_add=True)

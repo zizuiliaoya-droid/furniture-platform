@@ -1,11 +1,17 @@
 import { useEffect, useState } from 'react';
-import { Button, Card, Input, message, Space, Table, Tag, Tree, Typography, Upload } from 'antd';
-import { DownloadOutlined, UploadOutlined } from '@ant-design/icons';
+import {
+  Button, Card, Form, Input, Modal, message, Space, Table, Tag, Tree, Typography, Upload,
+} from 'antd';
+import {
+  DownloadOutlined, EditOutlined, EyeOutlined, FileTextOutlined, UploadOutlined,
+} from '@ant-design/icons';
 import { useParams } from 'react-router-dom';
 import { documentService } from '../../services/documentService';
 import { useAuthStore } from '../../store/authStore';
+import MediaPreview from '../../components/MediaPreview';
 
 const { Title } = Typography;
+const { TextArea } = Input;
 const DOC_TYPE_MAP: Record<string, string> = { design: 'DESIGN', training: 'TRAINING', certificates: 'CERTIFICATE' };
 const DOC_TYPE_LABEL: Record<string, string> = { DESIGN: '设计资源', TRAINING: '培训资料', CERTIFICATE: '资质文件' };
 
@@ -16,7 +22,11 @@ export default function DocumentListPage() {
   const [folders, setFolders] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedFolder, setSelectedFolder] = useState<number | null>(null);
+  const [richTextOpen, setRichTextOpen] = useState(false);
+  const [editingRichText, setEditingRichText] = useState<any>(null);
+  const [richTextForm] = Form.useForm();
   const isAdmin = useAuthStore((s) => s.user?.role === 'ADMIN');
+  const isTraining = apiDocType === 'TRAINING';
 
   const fetchDocs = async (params?: any) => {
     setLoading(true);
@@ -50,6 +60,52 @@ export default function DocumentListPage() {
     URL.revokeObjectURL(url);
   };
 
+  const openRichTextEditor = (doc?: any) => {
+    setEditingRichText(doc || null);
+    richTextForm.setFieldsValue({
+      name: doc?.name || '',
+      content: doc?.content || '',
+      tags: (doc?.tags || []).join(','),
+    });
+    setRichTextOpen(true);
+  };
+
+  const handleRichTextSubmit = async () => {
+    try {
+      const values = await richTextForm.validateFields();
+      const payload = {
+        name: values.name,
+        content: values.content,
+        doc_type: apiDocType,
+        folder: selectedFolder,
+        tags: (values.tags || '').split(',').map((t: string) => t.trim()).filter(Boolean),
+      };
+      if (editingRichText) {
+        await documentService.updateRichText(editingRichText.id, payload);
+        message.success('已更新');
+      } else {
+        await documentService.createRichText(payload);
+        message.success('已创建');
+      }
+      setRichTextOpen(false);
+      setEditingRichText(null);
+      richTextForm.resetFields();
+      fetchDocs();
+    } catch (err: any) {
+      if (err.response) {
+        message.error(err.response?.data?.detail || '保存失败');
+      }
+    }
+  };
+
+  const canPreview = (doc: any) => {
+    if (doc.resource_type === 'RICH_TEXT') return true;
+    const m = doc.mime_type || '';
+    return m.startsWith('image/') || m === 'application/pdf' ||
+      m.startsWith('video/') || m.startsWith('audio/') ||
+      /\.(doc|docx|ppt|pptx|xls|xlsx)$/i.test(doc.name);
+  };
+
   const toTreeData = (nodes: any[]): any[] =>
     nodes.map((n) => ({ key: n.id, title: n.name, children: toTreeData(n.children || []) }));
 
@@ -61,19 +117,94 @@ export default function DocumentListPage() {
       <div style={{ flex: 1 }}>
         <Space style={{ marginBottom: 16, justifyContent: 'space-between', width: '100%' }}>
           <Title level={4} style={{ margin: 0 }}>{DOC_TYPE_LABEL[apiDocType]}</Title>
-          {isAdmin && <Upload beforeUpload={handleUpload} showUploadList={false}>
-            <Button icon={<UploadOutlined />} type="primary">上传文档</Button>
-          </Upload>}
+          {isAdmin && (
+            <Space>
+              {isTraining && (
+                <Button icon={<FileTextOutlined />} onClick={() => openRichTextEditor()}>
+                  新建富文本
+                </Button>
+              )}
+              <Upload beforeUpload={handleUpload} showUploadList={false}>
+                <Button icon={<UploadOutlined />} type="primary">上传文档</Button>
+              </Upload>
+            </Space>
+          )}
         </Space>
         <Input.Search placeholder="搜索文件名..." allowClear style={{ marginBottom: 16, width: 300 }}
           onSearch={(v) => fetchDocs({ search: v })} />
-        <Table dataSource={documents} rowKey="id" loading={loading} columns={[
-          { title: '文件名', dataIndex: 'name' },
-          { title: '大小', dataIndex: 'file_size', render: (v: number) => `${(v / 1024).toFixed(1)} KB` },
-          { title: '标签', dataIndex: 'tags', render: (tags: string[]) => tags?.map((t) => <Tag key={t}>{t}</Tag>) },
-          { title: '操作', render: (_: any, r: any) => <Button size="small" icon={<DownloadOutlined />} onClick={() => handleDownload(r)}>下载</Button> },
-        ]} />
+        <Table
+          dataSource={documents}
+          rowKey="id"
+          loading={loading}
+          columns={[
+            {
+              title: '文件名', dataIndex: 'name', ellipsis: true,
+              render: (text: string, r: any) => (
+                <Space>
+                  {r.resource_type === 'RICH_TEXT' && <FileTextOutlined style={{ color: '#1890ff' }} />}
+                  <span>{text}</span>
+                </Space>
+              ),
+            },
+            { title: '类型', dataIndex: 'mime_type', width: 120, ellipsis: true,
+              render: (m: string, r: any) => r.resource_type === 'RICH_TEXT' ? '富文本' : m },
+            {
+              title: '大小', dataIndex: 'file_size', width: 100,
+              render: (v: number, r: any) => r.resource_type === 'RICH_TEXT'
+                ? `${(r.content?.length || 0)} 字符`
+                : (v > 1048576 ? `${(v / 1048576).toFixed(1)} MB` : `${(v / 1024).toFixed(1)} KB`),
+            },
+            { title: '标签', dataIndex: 'tags', render: (tags: string[]) => tags?.map((t) => <Tag key={t}>{t}</Tag>) },
+            {
+              title: '操作', width: 200,
+              render: (_: any, r: any) => (
+                <Space size="small">
+                  {canPreview(r) && (
+                    <MediaPreview
+                      filePath={r.file_path}
+                      mimeType={r.mime_type || ''}
+                      fileName={r.name}
+                      isRichText={r.resource_type === 'RICH_TEXT'}
+                      richTextContent={r.content}
+                      trigger={<Button size="small" icon={<EyeOutlined />}>预览</Button>}
+                    />
+                  )}
+                  {r.resource_type === 'RICH_TEXT' && isAdmin && (
+                    <Button size="small" icon={<EditOutlined />} onClick={() => openRichTextEditor(r)}>编辑</Button>
+                  )}
+                  {r.resource_type !== 'RICH_TEXT' && (
+                    <Button size="small" icon={<DownloadOutlined />} onClick={() => handleDownload(r)}>下载</Button>
+                  )}
+                </Space>
+              ),
+            },
+          ]}
+        />
       </div>
+
+      <Modal
+        title={editingRichText ? '编辑富文本' : '新建富文本'}
+        open={richTextOpen}
+        onCancel={() => { setRichTextOpen(false); setEditingRichText(null); }}
+        onOk={handleRichTextSubmit}
+        width={720}
+        okText="保存"
+      >
+        <Form form={richTextForm} layout="vertical">
+          <Form.Item name="name" label="标题" rules={[{ required: true, message: '请输入标题' }]}>
+            <Input placeholder="文档标题" />
+          </Form.Item>
+          <Form.Item name="content" label="内容（HTML）" rules={[{ required: true, message: '请输入内容' }]}>
+            <TextArea
+              rows={14}
+              placeholder='可粘贴 HTML，例如：<h2>标题</h2><p>段落</p><img src="..." /><video src="..." controls></video>'
+            />
+          </Form.Item>
+          <Form.Item name="tags" label="标签（逗号分隔）">
+            <Input placeholder="如: 入门, 视频教程" />
+          </Form.Item>
+        </Form>
+      </Modal>
     </div>
   );
 }

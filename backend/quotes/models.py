@@ -41,7 +41,14 @@ class QuoteItem(models.Model):
     quote = models.ForeignKey(Quote, on_delete=models.CASCADE, related_name='items')
     product = models.ForeignKey('products.Product', null=True, blank=True, on_delete=models.SET_NULL)
     product_name = models.CharField(max_length=200)
-    config_name = models.CharField(max_length=200, blank=True, default='')
+    config_name = models.CharField(max_length=200, blank=True, default='',
+                                   help_text='配置摘要文本（便于显示）')
+    config_attributes = models.JSONField(default=dict, blank=True,
+                                         help_text='完整配置 {"维度":"选项",...}')
+    image = models.ForeignKey('products.ProductImage', null=True, blank=True, on_delete=models.SET_NULL,
+                              help_text='报价明细展示图（来自产品图集）')
+    image_url = models.CharField(max_length=500, blank=True, default='',
+                                 help_text='冗余图片路径（导出 PDF 等场景使用）')
     unit_price = models.DecimalField(max_digits=10, decimal_places=2)
     quantity = models.IntegerField(default=1)
     discount = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal('0'))

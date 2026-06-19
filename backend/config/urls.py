@@ -1,8 +1,8 @@
 """Root URL configuration."""
 from django.conf import settings
-from django.conf.urls.static import static
 from django.contrib import admin
-from django.urls import include, path
+from django.urls import include, path, re_path
+from django.views.static import serve
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -17,5 +17,8 @@ urlpatterns = [
     path('api/', include('dashboard.urls')),
 ]
 
-if settings.DEBUG:
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+# 始终服务媒体文件（测试环境 DEBUG=False 时也能访问上传图片）。
+# 生产/大规模场景建议改由 nginx/对象存储直接服务。
+urlpatterns += [
+    re_path(r'^media/(?P<path>.*)$', serve, {'document_root': settings.MEDIA_ROOT}),
+]

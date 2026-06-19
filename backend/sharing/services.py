@@ -9,7 +9,7 @@ from products.serializers import ProductDetailSerializer, ProductListSerializer
 from cases.serializers import CaseDetailSerializer
 from quotes.models import Quote
 from quotes.serializers import QuoteDetailSerializer
-from .models import ClickTrackingLog, ShareAccessLog, ShareLink
+from .models import BrandingConfig, ClickTrackingLog, ShareAccessLog, ShareLink
 
 
 class ShareService:
@@ -51,7 +51,7 @@ class ShareService:
     @staticmethod
     def get_shared_content(share: ShareLink) -> dict:
         if share.content_type == 'PRODUCT':
-            obj = Product.objects.prefetch_related('images', 'configs').get(pk=share.object_id)
+            obj = Product.objects.prefetch_related('images', 'configs', 'config_dimensions').get(pk=share.object_id)
             return {'type': 'product', 'data': ProductDetailSerializer(obj).data}
         elif share.content_type == 'CASE':
             obj = Case.objects.prefetch_related('images', 'products').get(pk=share.object_id)
@@ -60,9 +60,26 @@ class ShareService:
             obj = Quote.objects.prefetch_related('items').get(pk=share.object_id)
             return {'type': 'quote', 'data': QuoteDetailSerializer(obj).data}
         elif share.content_type == 'CATALOG':
-            products = Product.objects.filter(is_active=True).prefetch_related('images')[:50]
+            products = Product.objects.filter(is_active=True).select_related('brand').prefetch_related('images')[:50]
             return {'type': 'catalog', 'data': ProductListSerializer(products, many=True).data}
+        elif share.content_type == 'BATCH':
+            # 批量分享：object_ids 是案例 ID 列表（最常见场景）
+            # 根据 title 中的关键词或直接按 Case 处理
+            cases = Case.objects.filter(id__in=share.object_ids).prefetch_related('images', 'products')
+            return {'type': 'batch_cases', 'data': CaseDetailSerializer(cases, many=True).data}
         return {}
+
+    @staticmethod
+    def get_branding() -> dict:
+        """获取品牌展示配置"""
+        config = BrandingConfig.objects.first()
+        if not config:
+            return {'company_name': '', 'logo_path': '', 'contact_info': ''}
+        return {
+            'company_name': config.company_name,
+            'logo_path': config.logo_path,
+            'contact_info': config.contact_info,
+        }
 
     @staticmethod
     def track_click(share: ShareLink, data: dict, request):

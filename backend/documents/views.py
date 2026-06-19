@@ -15,6 +15,7 @@ from .models import Document, DocumentFolder
 from .serializers import (
     DocumentFolderSerializer, DocumentFolderTreeSerializer,
     DocumentSerializer, DocumentTagUpdateSerializer,
+    RichTextDocumentCreateSerializer,
 )
 
 
@@ -114,4 +115,44 @@ def update_document_tags(request, pk):
     serializer.is_valid(raise_exception=True)
     doc.tags = serializer.validated_data['tags']
     doc.save(update_fields=['tags'])
+    return Response(DocumentSerializer(doc).data)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated, IsAdminRole])
+def create_rich_text_document(request):
+    """POST /api/documents/rich-text/ — 创建富文本文档（培训资料等）"""
+    serializer = RichTextDocumentCreateSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    data = serializer.validated_data
+    doc = Document.objects.create(
+        name=data['name'],
+        doc_type=data['doc_type'],
+        resource_type='RICH_TEXT',
+        content=data['content'],
+        folder_id=data.get('folder'),
+        file_path='',
+        file_size=0,
+        mime_type='text/html',
+        tags=data.get('tags', []),
+        created_by=request.user,
+    )
+    return Response(DocumentSerializer(doc).data, status=status.HTTP_201_CREATED)
+
+
+@api_view(['PATCH'])
+@permission_classes([IsAuthenticated, IsAdminRole])
+def update_rich_text_document(request, pk):
+    """PATCH /api/documents/{id}/rich-text/ — 更新富文本内容"""
+    try:
+        doc = Document.objects.get(pk=pk, resource_type='RICH_TEXT')
+    except Document.DoesNotExist:
+        return Response({'detail': '富文本文档不存在'}, status=status.HTTP_404_NOT_FOUND)
+    if 'name' in request.data:
+        doc.name = request.data['name']
+    if 'content' in request.data:
+        doc.content = request.data['content']
+    if 'tags' in request.data:
+        doc.tags = request.data['tags']
+    doc.save()
     return Response(DocumentSerializer(doc).data)

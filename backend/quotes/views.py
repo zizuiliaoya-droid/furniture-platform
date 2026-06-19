@@ -10,8 +10,8 @@ from rest_framework.viewsets import ModelViewSet
 from auth_app.permissions import IsAdminRole
 from .models import Quote, QuoteItem
 from .serializers import (
-    QuoteCreateUpdateSerializer, QuoteDetailSerializer,
-    QuoteItemSerializer, QuoteListSerializer,
+    AddItemFromProductSerializer, QuoteCreateUpdateSerializer,
+    QuoteDetailSerializer, QuoteItemSerializer, QuoteListSerializer,
 )
 from .services import QuoteService
 
@@ -90,3 +90,32 @@ class QuoteItemViewSet(ModelViewSet):
         quote = instance.quote
         instance.delete()
         quote.recalculate_total()
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def add_item_from_product_view(request, quote_pk):
+    """POST /api/quotes/{id}/items/from-product/ — 一键加入报价单"""
+    try:
+        quote = Quote.objects.get(pk=quote_pk)
+    except Quote.DoesNotExist:
+        return Response({'detail': '报价单不存在'}, status=status.HTTP_404_NOT_FOUND)
+
+    serializer = AddItemFromProductSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+
+    from products.models import Product
+    try:
+        product = Product.objects.get(pk=serializer.validated_data['product_id'])
+    except Product.DoesNotExist:
+        return Response({'detail': '产品不存在'}, status=status.HTTP_404_NOT_FOUND)
+
+    item = QuoteService.add_item_from_product(
+        quote=quote,
+        product=product,
+        selections=serializer.validated_data['selections'],
+        image_id=serializer.validated_data.get('image_id'),
+        quantity=serializer.validated_data.get('quantity', 1),
+        discount=serializer.validated_data.get('discount', 0),
+    )
+    return Response(QuoteItemSerializer(item).data, status=status.HTTP_201_CREATED)

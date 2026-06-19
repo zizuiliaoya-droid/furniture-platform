@@ -1,6 +1,6 @@
 """Sharing serializers."""
 from rest_framework import serializers
-from .models import ShareLink
+from .models import BrandingConfig, ShareLink
 
 
 class ShareLinkSerializer(serializers.ModelSerializer):
@@ -9,7 +9,7 @@ class ShareLinkSerializer(serializers.ModelSerializer):
     class Meta:
         model = ShareLink
         fields = [
-            'id', 'token', 'content_type', 'object_id', 'title',
+            'id', 'token', 'content_type', 'object_id', 'object_ids', 'title',
             'has_password', 'expires_at', 'max_access_count',
             'access_count', 'is_active', 'created_by', 'created_at',
         ]
@@ -20,8 +20,9 @@ class ShareLinkSerializer(serializers.ModelSerializer):
 
 
 class ShareLinkCreateSerializer(serializers.Serializer):
-    content_type = serializers.ChoiceField(choices=['PRODUCT', 'CASE', 'QUOTE', 'CATALOG'])
+    content_type = serializers.ChoiceField(choices=['PRODUCT', 'CASE', 'QUOTE', 'CATALOG', 'BATCH'])
     object_id = serializers.IntegerField(required=False, allow_null=True)
+    object_ids = serializers.ListField(child=serializers.IntegerField(), required=False, default=[])
     title = serializers.CharField(max_length=200)
     password = serializers.CharField(required=False, allow_blank=True)
     expires_at = serializers.DateTimeField(required=False, allow_null=True)
@@ -36,3 +37,9 @@ class ClickTrackSerializer(serializers.Serializer):
     event_type = serializers.CharField(max_length=20)
     object_id = serializers.IntegerField()
     object_name = serializers.CharField(max_length=200, required=False, default='')
+
+
+class BrandingConfigSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = BrandingConfig
+        fields = ['company_name', 'logo_path', 'contact_info']

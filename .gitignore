@@ -24,6 +24,11 @@ staticfiles/
 media/
 db.sqlite3
 
+# Test
+.pytest_cache/
+.coverage
+htmlcov/
+
 # Docker
 postgres_data/
 

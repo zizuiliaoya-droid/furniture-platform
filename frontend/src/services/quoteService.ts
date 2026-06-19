@@ -1,5 +1,13 @@
 import api from './api';
 
+export interface AddItemFromProductPayload {
+  product_id: number;
+  selections: Record<string, string>;
+  image_id?: number | null;
+  quantity?: number;
+  discount?: number;
+}
+
 export const quoteService = {
   getQuotes: (params?: any) => api.get('/api/quotes/', { params }),
   getQuote: (id: number) => api.get(`/api/quotes/${id}/`),
@@ -12,4 +20,8 @@ export const quoteService = {
   addItem: (quoteId: number, data: any) => api.post(`/api/quotes/${quoteId}/items/`, data),
   updateItem: (itemId: number, data: any) => api.put(`/api/quotes/items/${itemId}/`, data),
   deleteItem: (itemId: number) => api.delete(`/api/quotes/items/${itemId}/`),
+
+  /** 一键加入报价单（从产品详情页） */
+  addItemFromProduct: (quoteId: number, payload: AddItemFromProductPayload) =>
+    api.post(`/api/quotes/${quoteId}/items/from-product/`, payload),
 };

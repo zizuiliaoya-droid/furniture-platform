@@ -5,14 +5,14 @@ from django.db import models
 
 class Case(models.Model):
     INDUSTRY_CHOICES = [
-        ('TECH', '科技/互联网'),
-        ('FINANCE', '金融/保险/财税'),
-        ('REALESTATE', '地产/建筑/设计院'),
-        ('EDUCATION', '教育培训'),
-        ('MEDICAL', '医疗/大健康'),
-        ('MEDIA', '广告/文创/传媒'),
-        ('MANUFACTURE', '制造/实业/工厂'),
-        ('GOVERNMENT', '政府/国企/事业单位'),
+        ('TECH_OFFICE', '科技/互联网办公'),
+        ('FINANCE_OFFICE', '金融/保险/财税办公'),
+        ('REALESTATE_OFFICE', '地产/建筑/设计院'),
+        ('EDUCATION_OFFICE', '教育培训办公'),
+        ('MEDICAL_OFFICE', '医疗/大健康办公'),
+        ('MEDIA_OFFICE', '广告/文创/传媒办公'),
+        ('MANUFACTURE_OFFICE', '制造/实业/工厂办公'),
+        ('GOVERNMENT_OFFICE', '政府/国企/事业单位'),
         ('OTHER', '其他'),
     ]
     title = models.CharField(max_length=200)
@@ -24,7 +24,7 @@ class Case(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ['-created_at']
+        ordering = ['title']  # 按名称升序
 
     def __str__(self):
         return self.title

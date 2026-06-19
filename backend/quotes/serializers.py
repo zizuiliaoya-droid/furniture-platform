@@ -8,6 +8,7 @@ class QuoteItemSerializer(serializers.ModelSerializer):
         model = QuoteItem
         fields = [
             'id', 'product', 'product_name', 'config_name',
+            'config_attributes', 'image', 'image_url',
             'unit_price', 'quantity', 'discount', 'subtotal', 'sort_order',
         ]
         read_only_fields = ['id', 'subtotal']
@@ -47,3 +48,12 @@ class QuoteCreateUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Quote
         fields = ['title', 'customer_name', 'status', 'notes', 'terms']
+
+
+class AddItemFromProductSerializer(serializers.Serializer):
+    """一键加入报价单"""
+    product_id = serializers.IntegerField()
+    selections = serializers.DictField(child=serializers.CharField())
+    image_id = serializers.IntegerField(required=False, allow_null=True)
+    quantity = serializers.IntegerField(default=1, min_value=1)
+    discount = serializers.DecimalField(max_digits=5, decimal_places=2, default=0, min_value=0, max_value=100)

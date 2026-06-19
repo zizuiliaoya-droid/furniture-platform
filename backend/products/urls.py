@@ -7,10 +7,13 @@ from . import views
 router = DefaultRouter()
 router.register('products', views.ProductViewSet, basename='product')
 router.register('categories', views.CategoryViewSet, basename='category')
+router.register('brands', views.BrandViewSet, basename='brand')
 
 urlpatterns = [
+    # 旧配置（兼容保留）
     path('products/<int:product_pk>/configs/', views.ProductConfigViewSet.as_view({'get': 'list', 'post': 'create'})),
     path('products/configs/<int:pk>/', views.ProductConfigViewSet.as_view({'put': 'update', 'delete': 'destroy'})),
+    # 图片管理
     path('products/images/<int:pk>/', views.delete_product_image),
     path('products/images/<int:pk>/cover/', views.set_cover_image),
 ] + router.urls

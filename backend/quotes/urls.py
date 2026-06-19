@@ -8,5 +8,6 @@ router.register('quotes', views.QuoteViewSet, basename='quote')
 
 urlpatterns = [
     path('quotes/<int:quote_pk>/items/', views.QuoteItemViewSet.as_view({'get': 'list', 'post': 'create'})),
+    path('quotes/<int:quote_pk>/items/from-product/', views.add_item_from_product_view, name='quote-add-from-product'),
     path('quotes/items/<int:pk>/', views.QuoteItemViewSet.as_view({'put': 'update', 'delete': 'destroy'})),
 ] + router.urls
