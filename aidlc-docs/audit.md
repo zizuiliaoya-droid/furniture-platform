@@ -423,3 +423,31 @@
 **Context**: INCEPTION - Workflow Planning - Approved. Transition to CONSTRUCTION.
 
 ---
+## Core-Chain Hardening (6 Fixes) + Regression Tests
+**Timestamp**: 2026-06-19T07:30:00Z
+**User Input**: "全部批准"（6 项核心链路强化方案）
+**AI Response**: 完成 6 项修复：(1) PriceCalculationService 级联校验 + 选项归属校验；(2) 图册动态属性筛选前后端打通；(3) Excel 导入确认改 useState<File>；(4) PDF MEDIA_ROOT + base_url + 绝对图片路径；(5) 文档富文本闭环 + MediaPreview 图片 trigger 修复；(6) 新建 conftest.py / pytest.ini + 3 组测试文件。本地 21/21 测试通过（SQLite）。
+**Context**: CONSTRUCTION - Core Chain Hardening - Complete
+
+---
+
+## Deployment to Zeabur (via GitHub) + Seed Data
+**Timestamp**: 2026-06-19T08:20:00Z
+**User Input**: "上线到 zeabur...上传到 GitHub...香港节点"；"后续执行操作，可以用 GitHub 和 zeabur 的 mcp 操作，不必等我"
+**AI Response**: 完成上线全流程：
+- **种子数据**：新建幂等 `backend/products/management/commands/seed_demo.py`（参考 产品库字段描述.xlsx 真实椅子配置）。entrypoint.sh 在 SEED_DEMO=true 时执行。
+- **部署适配**（已提交）：urls.py 始终 serve /media；settings.py CSRF_TRUSTED_ORIGINS + SECURE_PROXY_SSL_HEADER；nginx.conf.template envsubst 代理 /api /media /static；Dockerfile / docker-compose.yml / zbpack.*.json。
+- **GitHub**：仓库 `zizuiliaoya-droid/furniture-platform`，已推送最新提交。
+- **Zeabur**（账号 zizuiliaoya，香港节点 server-6a2ce4bbab0f536bd05e6cf5）：
+  - 项目 `furniture-app`，PostgreSQL（RUNNING）+ 后端 + 前端服务全部 RUNNING。
+  - 后端域名 **furniture-api-zk.zeabur.app**（port 8000），前端域名 **furniture-zk.zeabur.app**（port 80）。
+  - 关键修复：首次部署因 `DATABASE_URL=${postgresql.*}` 跨服务嵌套引用解析失败而崩溃，改为字面量连接串后重新部署成功。
+- **线上验收（2026-06-19）**：
+  - `POST /api/auth/login/` → 返回 token（admin / admin123456）✓
+  - `GET /api/products/` → count=8 ✓；`/api/catalog/` count=8 ✓；`/api/cases/` count=6 ✓；`/api/brands/` count=5 ✓
+  - `POST /api/products/1/calculate-price/`（Matrix 椅 P1/网/2D）→ valid:true, price 1680.00 ✓
+  - 前端 `https://furniture-zk.zeabur.app/` → HTTP 200 ✓；经 nginx `/api` 代理登录成功 ✓
+- **待用户手动处理**：(1) 在 Zeabur 控制台连接 GitHub App 以启用 push-to-deploy；(2) 给后端服务 `/app/media` 挂载持久化 Volume（MCP 暂无 volume 接口）。
+**Context**: OPERATIONS - Deploy to Zeabur - Verified Live
+
+---

@@ -1,9 +1,10 @@
 import { useEffect } from 'react';
-import { Button, Input, Select, Space, Table, Tag, Typography } from 'antd';
-import { PlusOutlined } from '@ant-design/icons';
+import { Button, Input, message, Popconfirm, Select, Space, Table, Tag, Typography } from 'antd';
+import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { useProductStore } from '../../store/productStore';
 import { useAuthStore } from '../../store/authStore';
+import { productService } from '../../services/productService';
 
 const { Title } = Typography;
 
@@ -13,6 +14,46 @@ export default function ProductListPage() {
   const isAdmin = useAuthStore((s) => s.user?.role === 'ADMIN');
 
   useEffect(() => { fetchProducts(); }, []);
+
+  const handleDelete = async (id: number) => {
+    try {
+      await productService.deleteProduct(id);
+      message.success('已删除（产品已下架）');
+      fetchProducts();
+    } catch {
+      message.error('删除失败');
+    }
+  };
+
+  const columns: any[] = [
+    { title: '名称', dataIndex: 'name' },
+    { title: '编号', dataIndex: 'code' },
+    { title: '产地', dataIndex: 'origin', render: (v: string) => ({ IMPORT: '进口', DOMESTIC: '国产', CUSTOM: '定制' }[v]) },
+    { title: '最低售价', dataIndex: 'min_price', render: (v: number) => v ? `¥${v}` : '-' },
+    { title: '状态', dataIndex: 'is_active', render: (v: boolean) => <Tag color={v ? 'green' : 'default'}>{v ? '上架' : '下架'}</Tag> },
+  ];
+
+  if (isAdmin) {
+    columns.push({
+      title: '操作',
+      width: 120,
+      render: (_: any, record: any) => (
+        <Space size="small" onClick={(e) => e.stopPropagation()}>
+          <Button size="small" icon={<EditOutlined />} onClick={() => navigate(`/products/${record.id}/edit`)} />
+          <Popconfirm
+            title="确认删除？"
+            description="删除后产品将下架，不再展示。"
+            okText="删除"
+            cancelText="取消"
+            okButtonProps={{ danger: true }}
+            onConfirm={() => handleDelete(record.id)}
+          >
+            <Button size="small" danger icon={<DeleteOutlined />} />
+          </Popconfirm>
+        </Space>
+      ),
+    });
+  }
 
   return (
     <div>
@@ -28,13 +69,7 @@ export default function ProductListPage() {
       <Table dataSource={products} rowKey="id" loading={loading}
         pagination={{ current: page, pageSize, total, onChange: setPage }}
         onRow={(r) => ({ onClick: () => navigate(`/products/${r.id}`), style: { cursor: 'pointer' } })}
-        columns={[
-          { title: '名称', dataIndex: 'name' },
-          { title: '编号', dataIndex: 'code' },
-          { title: '产地', dataIndex: 'origin', render: (v: string) => ({ IMPORT: '进口', DOMESTIC: '国产', CUSTOM: '定制' }[v]) },
-          { title: '最低售价', dataIndex: 'min_price', render: (v: number) => v ? `¥${v}` : '-' },
-          { title: '状态', dataIndex: 'is_active', render: (v: boolean) => <Tag color={v ? 'green' : 'default'}>{v ? '上架' : '下架'}</Tag> },
-        ]} />
+        columns={columns} />
     </div>
   );
 }

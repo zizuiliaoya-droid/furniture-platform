@@ -11,6 +11,25 @@ import { useAuthStore } from '../../store/authStore';
 
 const { Title, Text, Paragraph } = Typography;
 
+/**
+ * 判断某配置维度在当前已选项下是否应显示。
+ * parent_dimension 格式：
+ *   ""                       —— 始终显示
+ *   "parent_key"             —— 父维度已选（任意值）即显示
+ *   "parent_key=parent_val"  —— 父维度已选且值等于 parent_val 才显示
+ */
+function isDimVisible(dim: any, selections: Record<string, string>): boolean {
+  const parent = (dim.parent_dimension || '').trim();
+  if (!parent) return true;
+  const [pk, pv] = parent.split('=');
+  const parentKey = pk.trim();
+  const requiredVal = pv !== undefined ? pv.trim() : null;
+  const parentVal = selections[parentKey];
+  if (parentVal === undefined || parentVal === null || parentVal === '') return false;
+  if (requiredVal !== null && parentVal !== requiredVal) return false;
+  return true;
+}
+
 export default function ProductDetailPage() {
   const { id } = useParams();
   const [searchParams] = useSearchParams();
@@ -55,7 +74,26 @@ export default function ProductDetailPage() {
   }, [id, selections]);
 
   const handleDimensionChange = (key: string, value: string) => {
-    setSelections(prev => ({ ...prev, [key]: value }));
+    setSelections(prev => {
+      const next: Record<string, string> = { ...prev };
+      if (value === undefined || value === null || value === '') {
+        delete next[key];
+      } else {
+        next[key] = value;
+      }
+      // 连锁清理：父条件不再满足的子维度选项一并移除
+      let changed = true;
+      while (changed) {
+        changed = false;
+        for (const dim of dimensions) {
+          if (dim.dimension_key in next && !isDimVisible(dim, next)) {
+            delete next[dim.dimension_key];
+            changed = true;
+          }
+        }
+      }
+      return next;
+    });
   };
 
   const openQuoteModal = useCallback(async () => {
@@ -160,7 +198,7 @@ export default function ProductDetailPage() {
           {dimensions.length > 0 && (
             <Card title="配置选择" style={{ marginTop: 16 }}>
               <Space direction="vertical" style={{ width: '100%' }}>
-                {dimensions.map((dim: any) => (
+                {dimensions.filter((dim: any) => isDimVisible(dim, selections)).map((dim: any) => (
                   <div key={dim.dimension_key}>
                     <Text strong>{dim.dimension_label}{dim.is_required && <Text type="danger"> *</Text>}</Text>
                     <div style={{ marginTop: 4 }}>

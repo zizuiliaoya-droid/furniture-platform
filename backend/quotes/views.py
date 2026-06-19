@@ -76,7 +76,11 @@ class QuoteItemViewSet(ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return QuoteItem.objects.filter(quote_id=self.kwargs.get('quote_pk'))
+        qs = QuoteItem.objects.all()
+        quote_pk = self.kwargs.get('quote_pk')
+        if quote_pk:
+            qs = qs.filter(quote_id=quote_pk)
+        return qs
 
     def perform_create(self, serializer):
         item = serializer.save(quote_id=self.kwargs['quote_pk'])

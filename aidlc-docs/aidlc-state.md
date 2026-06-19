@@ -8,9 +8,11 @@
 - **Project Name**: 家具软装内部管理平台
 - **Project Type**: Brownfield（棕地，存在完整 backend + frontend 实现，进入新一轮迭代）
 - **Start Date**: 2026-04-23T00:00:00Z
-- **Last Iteration**: CONSTRUCTION - Build and Test (Completed 2026-04-23)
-- **Current Iteration**: 2026-05 优化迭代
-- **Current Stage**: INCEPTION - Gap Analysis (awaiting scope approval)
+- **Last Iteration**: 2026-05 优化迭代 — CONSTRUCTION 全量完成 + 核心链路强化 + 上线 Zeabur（2026-06-19）
+- **Current Iteration**: OPERATIONS - 已上线测试环境
+- **Current Stage**: OPERATIONS - Deployed & Verified (Zeabur 香港节点)
+- **Live URLs**: 前端 https://furniture-zk.zeabur.app ｜ 后端 https://furniture-api-zk.zeabur.app
+- **Test Login**: admin / admin123456
 
 ## User Request
 按照提供的开发文档和需求文档开发，后续给用户测试采用临时方案（railway+vercel的部署方式），测试通过后部署到用户的私有云上，登录页采用interactive-dark-login.md来开发
@@ -54,9 +56,23 @@
 ### INCEPTION (Brownfield Re-entry)
 - [x] Workspace Detection — 检测到棕地项目 + 文档大幅更新
 - [x] Gap Analysis — 12 个差距已识别（详见 inception/gap-analysis.md）
-- [ ] Scope Approval — 等待用户回答 inception/optimization-scope-questions.md
-- [ ] Workflow Planning (revised) — 用户审批后生成
-- [ ] Per-unit Construction loops — 待规划
+- [x] Scope Approval — Q1=A 全量 / Q2=A 清库重建 / Q3=E 自定义 8 大办公分类 / Q4=A 完整 Excel 导入 / Q5=D 完整聚合
+- [x] Workflow Planning (revised) — 3 工作单元 16 步
+- [x] Per-unit Construction loops — 后端 5 新模型 + 前端重写全部完成
+
+### CONSTRUCTION (Optimization)
+- [x] 后端：Brand / ProductConfigDimension / ProductPriceMatrix / ProductPriceRule / ProductDocument + Product 字段重构 + QuoteItem 扩展 + Case 行业枚举
+- [x] 前端：图册重写 / 产品详情电商式选购 / 报价 CRUD / 文档预览
+- [x] 核心链路强化 6 项修复 + 21/21 单元测试通过
+
+### OPERATIONS
+- [x] 种子数据命令 seed_demo（幂等，参考真实椅子配置）
+- [x] 部署适配（nginx 模板 / Dockerfile / settings / urls / zbpack）
+- [x] 推送 GitHub（zizuiliaoya-droid/furniture-platform）
+- [x] Zeabur 香港节点部署：PostgreSQL + 后端 + 前端全部 RUNNING
+- [x] 线上验收：登录 / 图册 / 案例 / 品牌 / 算价 / 前端代理全部通过
+- [ ] 用户手动：Zeabur 连接 GitHub App 启用 push-to-deploy
+- [ ] 用户手动：后端 /app/media 挂载持久化 Volume
 
 ### Identified Gaps
 - G-1 Product 字段重构（category_l1/l2 / brand / lead_time / 尺寸 / pricing_mode / base_price）

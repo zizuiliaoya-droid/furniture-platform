@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import {
-  Button, Card, Col, Divider, Form, Input, InputNumber, message, Row,
-  Select, Space, Table, Tabs, Typography, Upload,
+  Button, Card, Col, Divider, Form, Image, Input, InputNumber, message, Popconfirm,
+  Row, Select, Space, Table, Tabs, Tag, Typography, Upload,
 } from 'antd';
-import { DeleteOutlined, InboxOutlined, PlusOutlined, UploadOutlined } from '@ant-design/icons';
+import { DeleteOutlined, InboxOutlined, PlusOutlined, StarOutlined, UploadOutlined } from '@ant-design/icons';
 import { useNavigate, useParams } from 'react-router-dom';
 import { productService } from '../../services/productService';
 import { brandService } from '../../services/brandService';
@@ -27,6 +27,41 @@ export default function ProductFormPage() {
   const [configExcelPreview, setConfigExcelPreview] = useState<any>(null);
   const [configExcelFile, setConfigExcelFile] = useState<File | null>(null);
 
+  // 图片管理
+  const [images, setImages] = useState<any[]>([]);
+  const loadImages = () => {
+    if (id) productService.getProduct(Number(id)).then(({ data }) => setImages(data.images || []));
+  };
+
+  const handleUploadImages = async (file: File) => {
+    if (!id) return;
+    const fd = new FormData();
+    fd.append('images', file);
+    try {
+      await productService.uploadImages(Number(id), fd);
+      message.success('图片上传成功');
+      loadImages();
+    } catch (err: any) {
+      message.error(err.response?.data?.detail || '图片上传失败');
+    }
+  };
+
+  const handleDeleteImage = async (imageId: number) => {
+    try {
+      await productService.deleteImage(imageId);
+      message.success('图片已删除');
+      loadImages();
+    } catch { message.error('删除失败'); }
+  };
+
+  const handleSetCover = async (imageId: number) => {
+    try {
+      await productService.setCoverImage(imageId);
+      message.success('已设为封面');
+      loadImages();
+    } catch { message.error('操作失败'); }
+  };
+
   useEffect(() => {
     brandService.getBrands().then(({ data }) => setBrands(data.results || data));
     productService.getCategoryOptions().then(({ data }) => setCategoryOptions(data));
@@ -34,6 +69,7 @@ export default function ProductFormPage() {
       productService.getProduct(Number(id)).then(({ data }) => {
         form.setFieldsValue(data);
         setSelectedL1(data.category_l1 || '');
+        setImages(data.images || []);
       });
       productService.getConfigDimensions(Number(id)).then(({ data }) => setDimensions(data));
     }
@@ -223,6 +259,51 @@ export default function ProductFormPage() {
             </Form>
           ),
         },
+        ...(isEdit ? [{
+          key: 'images',
+          label: '图片管理',
+          children: (
+            <Space direction="vertical" style={{ width: '100%' }} size="large">
+              <Card title="上传图片" size="small">
+                <Dragger
+                  accept="image/*"
+                  multiple
+                  showUploadList={false}
+                  beforeUpload={(file) => { handleUploadImages(file); return false; }}
+                >
+                  <p className="ant-upload-drag-icon"><InboxOutlined /></p>
+                  <p>点击或拖拽上传产品图片（支持多张，单张 ≤ 10MB）</p>
+                </Dragger>
+              </Card>
+              <Card title="已有图片" size="small">
+                {images.length === 0 ? <Text type="secondary">暂无图片</Text> : (
+                  <Image.PreviewGroup>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+                      {images.map((img: any) => (
+                        <div key={img.id} style={{
+                          border: img.is_cover ? '2px solid #1890ff' : '1px solid #f0f0f0',
+                          borderRadius: 4, padding: 4, width: 150,
+                        }}>
+                          <Image width={138} height={138} style={{ objectFit: 'cover', borderRadius: 4 }}
+                            src={`/media/${img.thumbnail_path?.medium || img.image_path}`} />
+                          <div style={{ marginTop: 4, textAlign: 'center' }}>
+                            {img.is_cover ? <Tag color="blue">封面</Tag> : (
+                              <Button size="small" type="link" icon={<StarOutlined />} onClick={() => handleSetCover(img.id)}>设为封面</Button>
+                            )}
+                            <Popconfirm title="删除该图片？" okText="删除" cancelText="取消"
+                              okButtonProps={{ danger: true }} onConfirm={() => handleDeleteImage(img.id)}>
+                              <Button size="small" type="link" danger icon={<DeleteOutlined />} />
+                            </Popconfirm>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </Image.PreviewGroup>
+                )}
+              </Card>
+            </Space>
+          ),
+        }] : []),
         ...(isEdit ? [{
           key: 'config',
           label: '配置管理',

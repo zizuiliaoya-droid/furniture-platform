@@ -18,7 +18,7 @@ export const quoteService = {
   exportPdf: (id: number) => api.get(`/api/quotes/${id}/pdf/`, { responseType: 'blob' }),
   getItems: (quoteId: number) => api.get(`/api/quotes/${quoteId}/items/`),
   addItem: (quoteId: number, data: any) => api.post(`/api/quotes/${quoteId}/items/`, data),
-  updateItem: (itemId: number, data: any) => api.put(`/api/quotes/items/${itemId}/`, data),
+  updateItem: (itemId: number, data: any) => api.patch(`/api/quotes/items/${itemId}/`, data),
   deleteItem: (itemId: number) => api.delete(`/api/quotes/items/${itemId}/`),
 
   /** 一键加入报价单（从产品详情页） */
