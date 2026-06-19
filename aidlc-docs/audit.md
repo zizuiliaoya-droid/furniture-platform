@@ -451,3 +451,15 @@
 **Context**: OPERATIONS - Deploy to Zeabur - Verified Live
 
 ---
+## Bug Fixes Round 2 (产品删除 / 级联误报 / 报价明细保存 / 图片上传 / Volume)
+**Timestamp**: 2026-06-19T14:40:00Z
+**User Input**: "1、软删除。2、批准。3、添加到报价单即购物车。4、报价明细编辑无法保存。5、产品管理无图片上传入口。6、Zeabur 挂载硬盘 ID/目录如何填写"
+**AI Response**: 定位并修复 4 个问题 + 回答 1 个部署问题：
+- **#1 产品删除入口**：`ProductListPage.tsx` 新增管理员"操作"列（编辑 + 删除），删除用 Popconfirm 二次确认，调用既有软删除端点 `DELETE /api/products/{id}/`（`perform_destroy` 置 `is_active=False`）。
+- **#2 级联约束误报（Steelcase Rule 椅）**：根因在前端无条件渲染所有维度且父维度变化不清理子选项。`ProductDetailPage.tsx` 新增 `isDimVisible()` 按 `parent_dimension`（空 / `key` / `key=value`）条件渲染，`handleDimensionChange` 连锁清理不可见子维度选项。后端逻辑无误。
+- **#4 报价明细保存失败**：双重 bug —— (a) `QuoteItemViewSet.get_queryset` 用 `quote_pk`（非嵌套路由为 None）过滤导致 404；(b) 路由仅 `put`→update 全量校验，前端只传 quantity/discount 触发必填校验失败。修复：`get_queryset` 兼容缺省 `quote_pk`；路由增 `patch`→`partial_update`；前端 `updateItem` 改用 `api.patch`。
+- **#5 图片上传入口**：`ProductFormPage.tsx` 编辑态新增"图片管理" Tab（拖拽上传 / 删除 / 设为封面），对接既有 `upload_images` / `delete_product_image` / `set_cover_image` 端点。
+- **#6 Zeabur Volume**：硬盘 ID = 自定义名称（如 `media`）；挂载目录 `/app/media` 正确（已核对 Dockerfile `WORKDIR /app` + 默认 `MEDIA_ROOT=/app/media`）。
+- **测试**：新增 `quotes/tests/test_quote_item_update.py`（PATCH 数量/折扣、仅数量、删除重算）3 例，本地 24/24 通过。前端 `npm run build` 通过。
+- **部署**：提交 `8b5dfdd` 推送 GitHub；经 Zeabur MCP 重新部署后端 + 前端（均 RUNNING）。线上验收：`PATCH /api/quotes/items/1/`→HTTP 200 且 subtotal 重算正确；前端 200、API 代理 200。
+**Context**: OPERATIONS - Bug Fixes Round 2 - Deployed & Verified
