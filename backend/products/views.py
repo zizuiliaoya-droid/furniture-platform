@@ -106,8 +106,12 @@ class ProductViewSet(ModelViewSet):
         serializer.save(created_by=self.request.user)
 
     def perform_destroy(self, instance):
-        instance.is_active = False
-        instance.save(update_fields=['is_active'])
+        # ?hard=true 永久删除；否则软删除（下架）
+        if self.request.query_params.get('hard') == 'true':
+            instance.delete()
+        else:
+            instance.is_active = False
+            instance.save(update_fields=['is_active'])
 
     # ─── 图片管理 ─────────────────────────────────────────────────────────────
 

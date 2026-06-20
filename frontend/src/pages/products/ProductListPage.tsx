@@ -15,10 +15,20 @@ export default function ProductListPage() {
 
   useEffect(() => { fetchProducts(); }, []);
 
-  const handleDelete = async (id: number) => {
+  const handleDeactivate = async (id: number) => {
     try {
       await productService.deleteProduct(id);
-      message.success('已删除（产品已下架）');
+      message.success('已下架');
+      fetchProducts();
+    } catch {
+      message.error('下架失败');
+    }
+  };
+
+  const handleHardDelete = async (id: number) => {
+    try {
+      await productService.deleteProduct(id, true);
+      message.success('已删除');
       fetchProducts();
     } catch {
       message.error('删除失败');
@@ -36,20 +46,32 @@ export default function ProductListPage() {
   if (isAdmin) {
     columns.push({
       title: '操作',
-      width: 120,
+      width: 150,
       render: (_: any, record: any) => (
         <Space size="small" onClick={(e) => e.stopPropagation()}>
           <Button size="small" icon={<EditOutlined />} onClick={() => navigate(`/products/${record.id}/edit`)} />
-          <Popconfirm
-            title="确认删除？"
-            description="删除后产品将下架，不再展示。"
-            okText="删除"
-            cancelText="取消"
-            okButtonProps={{ danger: true }}
-            onConfirm={() => handleDelete(record.id)}
-          >
-            <Button size="small" danger icon={<DeleteOutlined />} />
-          </Popconfirm>
+          {record.is_active ? (
+            <Popconfirm
+              title="确认下架？"
+              description="下架后产品不再展示，仍可再次执行删除。"
+              okText="下架"
+              cancelText="取消"
+              onConfirm={() => handleDeactivate(record.id)}
+            >
+              <Button size="small">下架</Button>
+            </Popconfirm>
+          ) : (
+            <Popconfirm
+              title="确认删除？"
+              description="将永久删除该产品，无法恢复。"
+              okText="删除"
+              cancelText="取消"
+              okButtonProps={{ danger: true }}
+              onConfirm={() => handleHardDelete(record.id)}
+            >
+              <Button size="small" danger icon={<DeleteOutlined />}>删除</Button>
+            </Popconfirm>
+          )}
         </Space>
       ),
     });

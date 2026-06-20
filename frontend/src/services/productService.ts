@@ -6,7 +6,7 @@ export const productService = {
   getProduct: (id: number) => api.get(`/api/products/${id}/`),
   createProduct: (data: any) => api.post('/api/products/', data),
   updateProduct: (id: number, data: any) => api.patch(`/api/products/${id}/`, data),
-  deleteProduct: (id: number) => api.delete(`/api/products/${id}/`),
+  deleteProduct: (id: number, hard = false) => api.delete(`/api/products/${id}/${hard ? '?hard=true' : ''}`),
 
   // ─── 图片管理 ──────────────────────────────────────────────────────────────
   uploadImages: (id: number, formData: FormData) =>
