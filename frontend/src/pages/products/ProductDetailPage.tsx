@@ -44,6 +44,7 @@ export default function ProductDetailPage() {
   const [quotes, setQuotes] = useState<any[]>([]);
   const [selectedQuoteId, setSelectedQuoteId] = useState<number | null>(null);
   const [selectedImageId, setSelectedImageId] = useState<number | null>(null);
+  const [mainImagePath, setMainImagePath] = useState<string>('');
   const [quantity, setQuantity] = useState(1);
   const [discount, setDiscount] = useState(0);
   const [addingToQuote, setAddingToQuote] = useState(false);
@@ -56,6 +57,14 @@ export default function ProductDetailPage() {
     productService.getConfigDimensions(Number(id)).then(({ data }) => setDimensions(data));
     productService.getProductDocuments(Number(id)).then(({ data }) => setDocuments(data));
   }, [id]);
+
+  // 初始化主图（封面优先）
+  useEffect(() => {
+    if (product?.images?.length) {
+      const cover = product.images.find((i: any) => i.is_cover) || product.images[0];
+      setMainImagePath(cover.image_path);
+    }
+  }, [product]);
 
   // 价格计算（debounce 300ms）
   useEffect(() => {
@@ -156,15 +165,25 @@ export default function ProductDetailPage() {
                   <Image
                     width="100%"
                     style={{ maxHeight: 400, objectFit: 'contain' }}
-                    src={`/media/${product.images[0]?.image_path}`}
+                    src={`/media/${mainImagePath || product.images[0]?.image_path}`}
                   />
                   <Space wrap>
-                    {product.images.map((img: any) => (
-                      <Image key={img.id} width={80} height={80}
-                        style={{ objectFit: 'cover', borderRadius: 4 }}
-                        src={`/media/${img.thumbnail_path?.small || img.image_path}`}
-                      />
-                    ))}
+                    {product.images.map((img: any) => {
+                      const isActive = (mainImagePath || product.images[0]?.image_path) === img.image_path;
+                      return (
+                        <img
+                          key={img.id}
+                          width={80}
+                          height={80}
+                          onClick={() => setMainImagePath(img.image_path)}
+                          style={{
+                            objectFit: 'cover', borderRadius: 4, cursor: 'pointer',
+                            border: isActive ? '2px solid #1890ff' : '2px solid transparent',
+                          }}
+                          src={`/media/${img.thumbnail_path?.small || img.image_path}`}
+                        />
+                      );
+                    })}
                   </Space>
                 </Space>
               </Image.PreviewGroup>
@@ -190,6 +209,7 @@ export default function ProductDetailPage() {
               </Descriptions.Item>
               {product.length_mm && <Descriptions.Item label="尺寸">{product.length_mm}×{product.width_mm}×{product.height_mm} mm</Descriptions.Item>}
               {product.official_url && <Descriptions.Item label="官网"><a href={product.official_url} target="_blank" rel="noreferrer">查看</a></Descriptions.Item>}
+              {product.model_3d_url && <Descriptions.Item label="3D 模型"><a href={product.model_3d_url} target="_blank" rel="noreferrer">查看</a></Descriptions.Item>}
             </Descriptions>
             {product.description && <Paragraph style={{ marginTop: 12 }}>{product.description}</Paragraph>}
           </Card>

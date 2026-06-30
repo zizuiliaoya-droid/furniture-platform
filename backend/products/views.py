@@ -113,6 +113,15 @@ class ProductViewSet(ModelViewSet):
             instance.is_active = False
             instance.save(update_fields=['is_active'])
 
+    @action(detail=True, methods=['post'], url_path='reactivate',
+            permission_classes=[IsAuthenticated, IsAdminRole])
+    def reactivate(self, request, pk=None):
+        """重新上架（下架产品恢复为上架）"""
+        product = self.get_object()
+        product.is_active = True
+        product.save(update_fields=['is_active'])
+        return Response({'detail': 'ok', 'is_active': True})
+
     # ─── 图片管理 ─────────────────────────────────────────────────────────────
 
     @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, IsAdminRole])

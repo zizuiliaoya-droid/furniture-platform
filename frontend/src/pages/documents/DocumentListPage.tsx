@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import {
-  Button, Card, Form, Input, Modal, message, Space, Table, Tag, Tree, Typography, Upload,
+  Button, Card, Form, Input, Modal, message, Popconfirm, Space, Table, Tag, Tree, Typography, Upload,
 } from 'antd';
 import {
-  DownloadOutlined, EditOutlined, EyeOutlined, FileTextOutlined, UploadOutlined,
+  DownloadOutlined, EditOutlined, EyeOutlined, FileTextOutlined, UploadOutlined, DeleteOutlined,
 } from '@ant-design/icons';
 import { useParams } from 'react-router-dom';
 import { documentService } from '../../services/documentService';
@@ -58,6 +58,16 @@ export default function DocumentListPage() {
     const a = document.createElement('a');
     a.href = url; a.download = doc.name; a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const handleDeleteDoc = async (doc: any) => {
+    try {
+      await documentService.deleteDocument(doc.id);
+      message.success('已删除');
+      fetchDocs();
+    } catch {
+      message.error('删除失败');
+    }
   };
 
   const openRichTextEditor = (doc?: any) => {
@@ -174,6 +184,17 @@ export default function DocumentListPage() {
                   )}
                   {r.resource_type !== 'RICH_TEXT' && (
                     <Button size="small" icon={<DownloadOutlined />} onClick={() => handleDownload(r)}>下载</Button>
+                  )}
+                  {isAdmin && (
+                    <Popconfirm
+                      title="确认删除该文件？"
+                      okText="删除"
+                      cancelText="取消"
+                      okButtonProps={{ danger: true }}
+                      onConfirm={() => handleDeleteDoc(r)}
+                    >
+                      <Button size="small" danger icon={<DeleteOutlined />}>删除</Button>
+                    </Popconfirm>
                   )}
                 </Space>
               ),

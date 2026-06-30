@@ -7,6 +7,7 @@ export const productService = {
   createProduct: (data: any) => api.post('/api/products/', data),
   updateProduct: (id: number, data: any) => api.patch(`/api/products/${id}/`, data),
   deleteProduct: (id: number, hard = false) => api.delete(`/api/products/${id}/${hard ? '?hard=true' : ''}`),
+  reactivateProduct: (id: number) => api.post(`/api/products/${id}/reactivate/`),
 
   // ─── 图片管理 ──────────────────────────────────────────────────────────────
   uploadImages: (id: number, formData: FormData) =>

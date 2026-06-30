@@ -1,6 +1,6 @@
 import { Menu } from 'antd';
 import {
-  AppstoreOutlined, BookOutlined, FileTextOutlined,
+  BookOutlined, FileTextOutlined,
   HomeOutlined, PictureOutlined, ShareAltOutlined,
   ShoppingOutlined, TeamOutlined, DollarOutlined,
 } from '@ant-design/icons';
@@ -16,7 +16,6 @@ export default function Sidebar() {
   const items = [
     { key: '/', icon: <HomeOutlined />, label: '首页' },
     { key: '/products', icon: <ShoppingOutlined />, label: '产品管理' },
-    { key: '/categories', icon: <AppstoreOutlined />, label: '分类管理' },
     { key: '/catalog', icon: <PictureOutlined />, label: '产品图册' },
     { key: '/cases', icon: <BookOutlined />, label: '客户案例' },
     {

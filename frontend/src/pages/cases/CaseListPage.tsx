@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Button, Space, Table, Tag, Typography } from 'antd';
-import { PlusOutlined } from '@ant-design/icons';
+import { Button, message, Popconfirm, Space, Table, Tag, Typography } from 'antd';
+import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { caseService } from '../../services/caseService';
 import { useAuthStore } from '../../store/authStore';
@@ -44,6 +44,43 @@ export default function CaseListPage() {
     }
   };
 
+  const handleDelete = async (id: number) => {
+    try {
+      await caseService.deleteCase(id);
+      message.success('已删除');
+      fetchCases(selectedIndustry ? { industry: selectedIndustry } : undefined);
+    } catch {
+      message.error('删除失败');
+    }
+  };
+
+  const columns: any[] = [
+    { title: '标题', dataIndex: 'title', sorter: (a: any, b: any) => a.title.localeCompare(b.title) },
+    { title: '行业', dataIndex: 'industry', render: (v: string) => INDUSTRIES.find((i) => i.value === v)?.label || v },
+    { title: '创建时间', dataIndex: 'created_at', render: (v: string) => v?.slice(0, 10) },
+  ];
+
+  if (isAdmin) {
+    columns.push({
+      title: '操作',
+      width: 120,
+      render: (_: any, record: any) => (
+        <Space size="small" onClick={(e) => e.stopPropagation()}>
+          <Button size="small" icon={<EditOutlined />} onClick={() => navigate(`/cases/${record.id}/edit`)} />
+          <Popconfirm
+            title="确认删除该案例？"
+            okText="删除"
+            cancelText="取消"
+            okButtonProps={{ danger: true }}
+            onConfirm={() => handleDelete(record.id)}
+          >
+            <Button size="small" danger icon={<DeleteOutlined />} />
+          </Popconfirm>
+        </Space>
+      ),
+    });
+  }
+
   return (
     <div>
       <Space style={{ marginBottom: 16, justifyContent: 'space-between', width: '100%' }}>
@@ -69,11 +106,7 @@ export default function CaseListPage() {
         rowKey="id"
         loading={loading}
         onRow={(r) => ({ onClick: () => navigate(`/cases/${r.id}`), style: { cursor: 'pointer' } })}
-        columns={[
-          { title: '标题', dataIndex: 'title', sorter: (a: any, b: any) => a.title.localeCompare(b.title) },
-          { title: '行业', dataIndex: 'industry', render: (v: string) => INDUSTRIES.find((i) => i.value === v)?.label || v },
-          { title: '创建时间', dataIndex: 'created_at', render: (v: string) => v?.slice(0, 10) },
-        ]}
+        columns={columns}
       />
     </div>
   );

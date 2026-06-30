@@ -35,6 +35,16 @@ export default function ProductListPage() {
     }
   };
 
+  const handleReactivate = async (id: number) => {
+    try {
+      await productService.reactivateProduct(id);
+      message.success('已上架');
+      fetchProducts();
+    } catch {
+      message.error('上架失败');
+    }
+  };
+
   const columns: any[] = [
     { title: '名称', dataIndex: 'name' },
     { title: '编号', dataIndex: 'code' },
@@ -46,7 +56,7 @@ export default function ProductListPage() {
   if (isAdmin) {
     columns.push({
       title: '操作',
-      width: 150,
+      width: 200,
       render: (_: any, record: any) => (
         <Space size="small" onClick={(e) => e.stopPropagation()}>
           <Button size="small" icon={<EditOutlined />} onClick={() => navigate(`/products/${record.id}/edit`)} />
@@ -61,16 +71,19 @@ export default function ProductListPage() {
               <Button size="small">下架</Button>
             </Popconfirm>
           ) : (
-            <Popconfirm
-              title="确认删除？"
-              description="将永久删除该产品，无法恢复。"
-              okText="删除"
-              cancelText="取消"
-              okButtonProps={{ danger: true }}
-              onConfirm={() => handleHardDelete(record.id)}
-            >
-              <Button size="small" danger icon={<DeleteOutlined />}>删除</Button>
-            </Popconfirm>
+            <>
+              <Button size="small" onClick={() => handleReactivate(record.id)}>上架</Button>
+              <Popconfirm
+                title="确认删除？"
+                description="将永久删除该产品，无法恢复。"
+                okText="删除"
+                cancelText="取消"
+                okButtonProps={{ danger: true }}
+                onConfirm={() => handleHardDelete(record.id)}
+              >
+                <Button size="small" danger icon={<DeleteOutlined />}>删除</Button>
+              </Popconfirm>
+            </>
           )}
         </Space>
       ),

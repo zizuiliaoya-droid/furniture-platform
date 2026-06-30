@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Button, Input, Select, Space, Table, Tag, Typography } from 'antd';
-import { PlusOutlined } from '@ant-design/icons';
+import { Button, Input, message, Popconfirm, Select, Space, Table, Tag, Typography } from 'antd';
+import { DeleteOutlined, PlusOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { quoteService } from '../../services/quoteService';
+import { useAuthStore } from '../../store/authStore';
 
 const { Title } = Typography;
 const STATUS_MAP: Record<string, { label: string; color: string }> = {
@@ -14,6 +15,7 @@ export default function QuoteListPage() {
   const [quotes, setQuotes] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const isAdmin = useAuthStore((s) => s.user?.role === 'ADMIN');
 
   const fetchQuotes = async (params?: any) => {
     setLoading(true);
@@ -22,6 +24,44 @@ export default function QuoteListPage() {
   };
 
   useEffect(() => { fetchQuotes(); }, []);
+
+  const handleDelete = async (id: number) => {
+    try {
+      await quoteService.deleteQuote(id);
+      message.success('已删除');
+      fetchQuotes();
+    } catch {
+      message.error('删除失败');
+    }
+  };
+
+  const columns: any[] = [
+    { title: '标题', dataIndex: 'title' },
+    { title: '客户', dataIndex: 'customer_name' },
+    { title: '状态', dataIndex: 'status', render: (v: string) => <Tag color={STATUS_MAP[v]?.color}>{STATUS_MAP[v]?.label}</Tag> },
+    { title: '总金额', dataIndex: 'total_amount', render: (v: number) => `¥${v}` },
+    { title: '更新时间', dataIndex: 'updated_at', render: (v: string) => v?.slice(0, 10) },
+  ];
+
+  if (isAdmin) {
+    columns.push({
+      title: '操作',
+      width: 90,
+      render: (_: any, record: any) => (
+        <span onClick={(e) => e.stopPropagation()}>
+          <Popconfirm
+            title="确认删除该报价单？"
+            okText="删除"
+            cancelText="取消"
+            okButtonProps={{ danger: true }}
+            onConfirm={() => handleDelete(record.id)}
+          >
+            <Button size="small" danger icon={<DeleteOutlined />} />
+          </Popconfirm>
+        </span>
+      ),
+    });
+  }
 
   return (
     <div>
@@ -36,13 +76,7 @@ export default function QuoteListPage() {
       </Space>
       <Table dataSource={quotes} rowKey="id" loading={loading}
         onRow={(r) => ({ onClick: () => navigate(`/quotes/${r.id}`), style: { cursor: 'pointer' } })}
-        columns={[
-          { title: '标题', dataIndex: 'title' },
-          { title: '客户', dataIndex: 'customer_name' },
-          { title: '状态', dataIndex: 'status', render: (v: string) => <Tag color={STATUS_MAP[v]?.color}>{STATUS_MAP[v]?.label}</Tag> },
-          { title: '总金额', dataIndex: 'total_amount', render: (v: number) => `¥${v}` },
-          { title: '更新时间', dataIndex: 'updated_at', render: (v: string) => v?.slice(0, 10) },
-        ]} />
+        columns={columns} />
     </div>
   );
 }

@@ -7,7 +7,6 @@ import UserManagementPage from './pages/auth/UserManagementPage';
 import ProductListPage from './pages/products/ProductListPage';
 import ProductDetailPage from './pages/products/ProductDetailPage';
 import ProductFormPage from './pages/products/ProductFormPage';
-import CategoryManagementPage from './pages/products/CategoryManagementPage';
 import CatalogPage from './pages/catalog/CatalogPage';
 import CaseListPage from './pages/cases/CaseListPage';
 import CaseDetailPage from './pages/cases/CaseDetailPage';
@@ -31,7 +30,6 @@ export default function App() {
           <Route path="/products/new" element={<ProductFormPage />} />
           <Route path="/products/:id" element={<ProductDetailPage />} />
           <Route path="/products/:id/edit" element={<ProductFormPage />} />
-          <Route path="/categories" element={<CategoryManagementPage />} />
           <Route path="/catalog" element={<CatalogPage />} />
           <Route path="/cases" element={<CaseListPage />} />
           <Route path="/cases/new" element={<CaseFormPage />} />
