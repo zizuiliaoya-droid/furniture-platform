@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   Button, Card, Descriptions, Image, InputNumber, message, Popconfirm,
-  Space, Table, Tag, Tooltip, Typography,
+  Select, Space, Table, Tag, Tooltip, Typography,
 } from 'antd';
 import {
   CopyOutlined, DeleteOutlined, EditOutlined, FilePdfOutlined,
@@ -11,6 +11,14 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { quoteService } from '../../services/quoteService';
 
 const { Title, Text } = Typography;
+
+// 状态流转（与后端 VALID_TRANSITIONS 保持一致）
+const VALID_TRANSITIONS: Record<string, string[]> = {
+  DRAFT: ['SENT', 'CANCELLED'],
+  SENT: ['CONFIRMED', 'CANCELLED'],
+  CONFIRMED: ['CANCELLED'],
+  CANCELLED: [],
+};
 
 export default function QuoteDetailPage() {
   const { id } = useParams();
@@ -59,6 +67,16 @@ export default function QuoteDetailPage() {
       message.success('已删除');
       loadQuote();
     } catch { message.error('删除失败'); }
+  };
+
+  const handleStatusChange = async (newStatus: string) => {
+    try {
+      await quoteService.updateQuote(Number(id), { status: newStatus });
+      message.success('状态已更新');
+      loadQuote();
+    } catch (err: any) {
+      message.error(err.response?.data?.detail || err.response?.data?.[0] || '状态更新失败');
+    }
   };
 
   if (!quote) return null;
@@ -145,7 +163,21 @@ export default function QuoteDetailPage() {
         <Descriptions column={2}>
           <Descriptions.Item label="客户">{quote.customer_name}</Descriptions.Item>
           <Descriptions.Item label="状态">
-            <Tag color={STATUS_COLOR[quote.status]}>{STATUS_LABEL[quote.status] || quote.status}</Tag>
+            <Space>
+              <Tag color={STATUS_COLOR[quote.status]}>{STATUS_LABEL[quote.status] || quote.status}</Tag>
+              {(VALID_TRANSITIONS[quote.status] || []).length > 0 && (
+                <Select
+                  size="small"
+                  placeholder="变更状态"
+                  style={{ width: 120 }}
+                  value={undefined}
+                  onChange={handleStatusChange}
+                  options={(VALID_TRANSITIONS[quote.status] || []).map((s) => ({
+                    value: s, label: STATUS_LABEL[s] || s,
+                  }))}
+                />
+              )}
+            </Space>
           </Descriptions.Item>
           <Descriptions.Item label="总金额">
             <Text strong style={{ fontSize: 18 }}>¥{quote.total_amount}</Text>
