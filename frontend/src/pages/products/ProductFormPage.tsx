@@ -27,6 +27,10 @@ export default function ProductFormPage() {
   const [configExcelPreview, setConfigExcelPreview] = useState<any>(null);
   const [configExcelFile, setConfigExcelFile] = useState<File | null>(null);
 
+  // 新建模式下暂存（一页提交）：待上传图片 + 待创建维度
+  const [pendingImages, setPendingImages] = useState<File[]>([]);
+  const [pendingDims, setPendingDims] = useState<any[]>([]);
+
   // 图片管理
   const [images, setImages] = useState<any[]>([]);
   const loadImages = () => {
@@ -82,7 +86,21 @@ export default function ProductFormPage() {
         await productService.updateProduct(Number(id), values);
         message.success('产品更新成功');
       } else {
-        await productService.createProduct(values);
+        // 一页提交：创建产品 → 上传图片 → 创建配置维度
+        const { data: created } = await productService.createProduct(values);
+        const newId = created.id;
+        if (pendingImages.length) {
+          const fd = new FormData();
+          pendingImages.forEach((f) => fd.append('images', f));
+          try { await productService.uploadImages(newId, fd); }
+          catch { message.warning('产品已创建，但部分图片上传失败'); }
+        }
+        for (let i = 0; i < pendingDims.length; i++) {
+          const d = pendingDims[i];
+          try {
+            await productService.addConfigDimension(newId, { ...d, sort_order: i });
+          } catch { message.warning(`维度「${d.dimension_label}」创建失败`); }
+        }
         message.success('产品创建成功');
       }
       navigate('/products');
@@ -130,18 +148,25 @@ export default function ProductFormPage() {
   // 手工添加维度
   const [newDimForm] = Form.useForm();
   const handleAddDimension = async () => {
-    if (!id) return;
     try {
       const values = await newDimForm.validateFields();
       const options = (values.options_text || '').split(',').map((o: string) => ({ key: o.trim(), label: o.trim() })).filter((o: any) => o.key);
-      await productService.addConfigDimension(Number(id), {
+      const payload = {
         dimension_key: values.dimension_key,
         dimension_label: values.dimension_label,
         options,
         parent_dimension: values.parent_dimension || '',
         is_required: values.is_required ?? true,
         sort_order: dimensions.length,
-      });
+      };
+      if (!id) {
+        // 新建模式：暂存到本地，随产品一起提交
+        setPendingDims((prev) => [...prev, payload]);
+        newDimForm.resetFields();
+        message.success('已添加（保存产品时一并创建）');
+        return;
+      }
+      await productService.addConfigDimension(Number(id), payload);
       message.success('维度添加成功');
       newDimForm.resetFields();
       productService.getConfigDimensions(Number(id)).then(({ data }) => setDimensions(data));
@@ -268,6 +293,75 @@ export default function ProductFormPage() {
               <Form.Item name="official_url" label="官网链接"><Input /></Form.Item>
               <Form.Item name="model_3d_url" label="3D 模型链接"><Input /></Form.Item>
               <Form.Item name="description" label="产品描述"><TextArea rows={4} /></Form.Item>
+
+              {!isEdit && (
+                <>
+                  <Divider orientation="left">产品图片（可选）</Divider>
+                  <Dragger
+                    accept="image/*"
+                    multiple
+                    showUploadList={false}
+                    beforeUpload={(file) => { setPendingImages((prev) => [...prev, file]); return false; }}
+                  >
+                    <p className="ant-upload-drag-icon"><InboxOutlined /></p>
+                    <p>点击或拖拽添加图片（保存时随产品一起上传）</p>
+                  </Dragger>
+                  {pendingImages.length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
+                      {pendingImages.map((f, i) => (
+                        <div key={i} style={{ position: 'relative', width: 90 }}>
+                          <img src={URL.createObjectURL(f)} alt="" style={{ width: 88, height: 88, objectFit: 'cover', borderRadius: 4 }} />
+                          <Button size="small" danger type="link" icon={<DeleteOutlined />}
+                            onClick={() => setPendingImages((prev) => prev.filter((_, idx) => idx !== i))} />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <Divider orientation="left">配置维度（可选）</Divider>
+                  <Form form={newDimForm} layout="inline" style={{ flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
+                    <Form.Item name="dimension_key" rules={[{ required: true, message: '必填' }]}>
+                      <Input placeholder="维度键 (如 frame_color)" />
+                    </Form.Item>
+                    <Form.Item name="dimension_label" rules={[{ required: true, message: '必填' }]}>
+                      <Input placeholder="展示名 (如 框架颜色)" />
+                    </Form.Item>
+                    <Form.Item name="options_text" rules={[{ required: true, message: '必填' }]}>
+                      <Input placeholder="选项 (逗号: P1,P2,P3)" style={{ width: 180 }} />
+                    </Form.Item>
+                    <Form.Item name="parent_dimension">
+                      <Input placeholder="父维度 (可空)" />
+                    </Form.Item>
+                    <Form.Item name="is_required" initialValue={true}>
+                      <Select style={{ width: 80 }} options={[{ value: true, label: '必填' }, { value: false, label: '可选' }]} />
+                    </Form.Item>
+                    <Form.Item>
+                      <Button icon={<PlusOutlined />} onClick={handleAddDimension}>添加</Button>
+                    </Form.Item>
+                  </Form>
+                  {pendingDims.length > 0 && (
+                    <Table
+                      dataSource={pendingDims}
+                      rowKey={(_, i) => String(i)}
+                      pagination={false}
+                      size="small"
+                      style={{ marginBottom: 12 }}
+                      columns={[
+                        { title: '维度键', dataIndex: 'dimension_key', width: 140 },
+                        { title: '展示名', dataIndex: 'dimension_label', width: 140 },
+                        { title: '选项', dataIndex: 'options', render: (opts: any[]) => opts?.map((o) => o.label).join(', ') },
+                        {
+                          title: '操作', width: 60,
+                          render: (_: any, __: any, i: number) => (
+                            <Button size="small" danger type="link" icon={<DeleteOutlined />}
+                              onClick={() => setPendingDims((prev) => prev.filter((_, idx) => idx !== i))} />
+                          ),
+                        },
+                      ]}
+                    />
+                  )}
+                </>
+              )}
 
               <Form.Item>
                 <Button type="primary" htmlType="submit" loading={loading}>{isEdit ? '保存' : '创建'}</Button>
