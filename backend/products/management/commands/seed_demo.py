@@ -29,8 +29,14 @@ User = get_user_model()
 class Command(BaseCommand):
     help = '初始化测试演示数据（幂等）'
 
+    def add_arguments(self, parser):
+        parser.add_argument('--flush', action='store_true',
+                            help='先清空演示数据（产品/品牌/案例/文档/报价）再重灌')
+
     @transaction.atomic
     def handle(self, *args, **options):
+        if options.get('flush'):
+            self._flush()
         admin = self._ensure_admin()
         brands = self._seed_brands()
         self._seed_branding()
@@ -41,6 +47,21 @@ class Command(BaseCommand):
         self._seed_documents(admin)
         self._seed_quotes(admin)
         self.stdout.write(self.style.SUCCESS('[OK] 测试数据初始化完成'))
+
+    def _flush(self):
+        """清库重灌：删除演示相关数据（保留用户账号）"""
+        from products.models import ProductImage
+        QuoteItem.objects.all().delete()
+        Quote.objects.all().delete()
+        ProductPriceMatrix.objects.all().delete()
+        ProductPriceRule.objects.all().delete()
+        ProductConfigDimension.objects.all().delete()
+        ProductImage.objects.all().delete()
+        Product.objects.all().delete()
+        Case.objects.all().delete()
+        Document.objects.all().delete()
+        Brand.objects.all().delete()
+        self.stdout.write('  已清空演示数据（产品/配置/价格/案例/文档/报价/品牌）')
 
     # ── 用户 ──────────────────────────────────────────────────────────────
     def _ensure_admin(self):
@@ -93,7 +114,7 @@ class Command(BaseCommand):
             defaults=dict(
                 name='ZIKOO 人体工学办公椅 (Matrix)',
                 description='款式：高背人体工学；映射表定价模式。可选框架色 / 坐垫材质 / 扶手。',
-                category_l1='SEATING', category_l2='TASK_CHAIR',
+                category_l1='SEATING', category_l2='OFFICE_CHAIR',
                 brand=brands['ZIKOO'], origin='DOMESTIC', lead_time='WITHIN_45D',
                 pricing_mode='MATRIX',
                 length_mm=680, width_mm=680, height_mm=1180,
@@ -140,7 +161,7 @@ class Command(BaseCommand):
             defaults=dict(
                 name='Steelcase 高管椅 (Rule)',
                 description='款式：高管大班椅；基准价 + 加价规则定价。靠背材质支持级联系列。',
-                category_l1='SEATING', category_l2='EXECUTIVE_CHAIR',
+                category_l1='SEATING', category_l2='OFFICE_CHAIR',
                 brand=brands['Steelcase'], origin='IMPORT', lead_time='4_6M_EU',
                 pricing_mode='RULE', base_price=Decimal('2800'),
                 length_mm=720, width_mm=720, height_mm=1250,
@@ -192,15 +213,15 @@ class Command(BaseCommand):
         items = [
             ('ZK-DESK-01', '升降办公桌', 'DESKS_WORKSTATIONS', 'HEIGHT_ADJUSTABLE_DESK',
              'Vitra', 'IMPORT', '2_4M_VIETNAM', 3200, 1400, 700, 1200),
-            ('ZK-DESK-02', '屏风工位 4 人位', 'DESKS_WORKSTATIONS', 'WORKSTATION_CLUSTER',
+            ('ZK-DESK-02', '屏风工位 4 人位', 'DESKS_WORKSTATIONS', 'BENCHING',
              'ZIKOO', 'DOMESTIC', 'WITHIN_45D', 5800, 2800, 2800, 1100),
             ('ZK-TABLE-01', '会议桌 3.6m', 'TABLE', 'CONFERENCE_TABLE',
              'Haworth', 'IMPORT', '2_4M_MALAYSIA', 8800, 3600, 1200, 750),
-            ('ZK-STORAGE-01', '钢制文件柜', 'STORAGE', 'FILING_CABINET',
+            ('ZK-STORAGE-01', '钢制文件柜', 'STORAGE', 'CABINET_CREDENZA',
              'ZIKOO', 'DOMESTIC', 'WITHIN_45D', 1200, 900, 450, 1800),
             ('ZK-ACC-01', '显示器支架', 'ACCESSORIES', 'MONITOR_ARM',
              'Herman Miller', 'IMPORT', '4_6M_EU', 980, 0, 0, 0),
-            ('ZK-EDU-01', '教室课桌椅', 'EDUCATION', 'STUDENT_DESK',
+            ('ZK-EDU-01', '教室课桌椅', 'EDUCATION', 'EDU_DESK',
              'ZIKOO', 'DOMESTIC', 'WITHIN_45D', 680, 600, 450, 760),
         ]
         n = 0

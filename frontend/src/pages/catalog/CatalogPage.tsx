@@ -18,13 +18,11 @@ interface FilterState {
   height_range: string;
   price_range: string;
   q: string;
-  dynamic_attrs: Record<string, string[]>;
 }
 
 const EMPTY_FILTERS: FilterState = {
   brand: [], category_l1: [], category_l2: [], origin: [], lead_time: [],
   length_range: '', width_range: '', height_range: '', price_range: '', q: '',
-  dynamic_attrs: {},
 };
 
 export default function CatalogPage() {
@@ -62,10 +60,6 @@ export default function CatalogPage() {
       if (filters.width_range) params.width_range = filters.width_range;
       if (filters.height_range) params.height_range = filters.height_range;
       if (filters.price_range) params.price_range = filters.price_range;
-      // 动态属性
-      Object.entries(filters.dynamic_attrs).forEach(([key, vals]) => {
-        if (vals && vals.length) params[`attr_${key}[]`] = vals;
-      });
       const { data } = await catalogService.getCatalog(params);
       setProducts(data.results || data);
     } finally {
@@ -75,6 +69,17 @@ export default function CatalogPage() {
 
   const updateFilter = (key: keyof FilterState, value: any) => {
     setFilters(prev => ({ ...prev, [key]: value }));
+  };
+
+  // 一级分类切换：同步剔除失效的二级分类（修复取消一级后二级仍生效）
+  const handleL1Toggle = (value: string, checked: boolean) => {
+    const nextL1 = checked
+      ? [...filters.category_l1, value]
+      : filters.category_l1.filter(v => v !== value);
+    const valid = new Set<string>();
+    nextL1.forEach(l1 => (filterOptions?.category_l2?.[l1] || []).forEach((it: any) => valid.add(it.value)));
+    const nextL2 = filters.category_l2.filter(v => valid.has(v));
+    setFilters(prev => ({ ...prev, category_l1: nextL1, category_l2: nextL2 }));
   };
 
   const clearFilters = () => setFilters(EMPTY_FILTERS);
@@ -91,7 +96,6 @@ export default function CatalogPage() {
     if (filters.width_range) count++;
     if (filters.height_range) count++;
     if (filters.price_range) count++;
-    Object.values(filters.dynamic_attrs).forEach(vals => { if (vals && vals.length) count++; });
     return count;
   }, [filters]);
 
@@ -155,12 +159,7 @@ export default function CatalogPage() {
               <Tag.CheckableTag
                 key={item.value}
                 checked={filters.category_l1.includes(item.value)}
-                onChange={checked => {
-                  const next = checked
-                    ? [...filters.category_l1, item.value]
-                    : filters.category_l1.filter((v: string) => v !== item.value);
-                  updateFilter('category_l1', next);
-                }}
+                onChange={checked => handleL1Toggle(item.value, checked)}
               >
                 {item.label}
               </Tag.CheckableTag>
@@ -208,23 +207,6 @@ export default function CatalogPage() {
             ))}
             {filters.price_range && (
               <Tag closable onClose={() => updateFilter('price_range', '')}>价格: {filters.price_range}</Tag>
-            )}
-            {Object.entries(filters.dynamic_attrs).flatMap(([key, vals]) =>
-              (vals || []).map(v => (
-                <Tag
-                  key={`attr-${key}-${v}`}
-                  closable
-                  onClose={() => setFilters(prev => ({
-                    ...prev,
-                    dynamic_attrs: {
-                      ...prev.dynamic_attrs,
-                      [key]: (prev.dynamic_attrs[key] || []).filter(x => x !== v),
-                    },
-                  }))}
-                >
-                  {key}: {v}
-                </Tag>
-              ))
             )}
           </Space>
         )}
@@ -368,21 +350,6 @@ export default function CatalogPage() {
               />
             </div>
           )}
-
-          {/* 动态属性 */}
-          {filterOptions?.dynamic_attributes?.map((attr: any) => (
-            <div key={attr.dimension_key}>
-              <Title level={5}>{attr.dimension_label}</Title>
-              <Checkbox.Group
-                value={filters.dynamic_attrs[attr.dimension_key] || []}
-                onChange={(vals) => setFilters(prev => ({
-                  ...prev,
-                  dynamic_attrs: { ...prev.dynamic_attrs, [attr.dimension_key]: vals as string[] },
-                }))}
-                options={attr.options.map((o: string) => ({ label: o, value: o }))}
-              />
-            </div>
-          ))}
         </Space>
       </Drawer>
     </div>

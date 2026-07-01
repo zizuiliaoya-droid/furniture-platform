@@ -8,6 +8,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { productService } from '../../services/productService';
 import { quoteService } from '../../services/quoteService';
 import { useAuthStore } from '../../store/authStore';
+import { l1Label, l2Label } from '../../constants/categories';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -203,7 +204,7 @@ export default function ProductDetailPage() {
               <Descriptions.Item label="品牌">{product.brand_name || '-'}</Descriptions.Item>
               <Descriptions.Item label="产地">{ORIGIN_MAP[product.origin] || '-'}</Descriptions.Item>
               <Descriptions.Item label="货期">{LEAD_TIME_MAP[product.lead_time] || '-'}</Descriptions.Item>
-              <Descriptions.Item label="类别">{product.category_l1} / {product.category_l2}</Descriptions.Item>
+              <Descriptions.Item label="类别">{l1Label(product.category_l1)} / {l2Label(product.category_l2)}</Descriptions.Item>
               <Descriptions.Item label="状态">
                 <Tag color={product.is_active ? 'green' : 'default'}>{product.is_active ? '上架' : '下架'}</Tag>
               </Descriptions.Item>

@@ -5,7 +5,11 @@ interface ProductState {
   products: any[];
   total: number;
   loading: boolean;
-  filters: { search?: string; origin?: string; category?: number; is_active?: string };
+  filters: {
+    search?: string; origin?: string; category?: number; is_active?: string;
+    category_l1?: string; category_l2?: string; brand?: number; lead_time?: string;
+    min_price?: number; max_price?: number;
+  };
   page: number;
   pageSize: number;
   fetchProducts: () => Promise<void>;

@@ -76,6 +76,12 @@ class ProductViewSet(ModelViewSet):
         lead_time = self.request.query_params.get('lead_time')
         if lead_time:
             qs = qs.filter(lead_time=lead_time)
+        min_price = self.request.query_params.get('min_price')
+        if min_price:
+            qs = qs.filter(min_price__gte=min_price)
+        max_price = self.request.query_params.get('max_price')
+        if max_price:
+            qs = qs.filter(min_price__lte=max_price)
         is_active = self.request.query_params.get('is_active')
         if is_active is not None and self.request.user.role == 'ADMIN':
             qs = qs.filter(is_active=is_active.lower() == 'true')
