@@ -1,13 +1,20 @@
 import { useEffect, useState } from 'react';
-import { Button, Input, InputNumber, message, Popconfirm, Select, Space, Table, Tag, Typography } from 'antd';
-import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons';
+import { Button, Input, InputNumber, message, Modal, Popconfirm, Select, Space, Table, Tag, Typography, Upload } from 'antd';
+import { DeleteOutlined, DownloadOutlined, EditOutlined, ImportOutlined, PlusOutlined, UploadOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { useProductStore } from '../../store/productStore';
 import { useAuthStore } from '../../store/authStore';
 import { productService } from '../../services/productService';
 import { brandService } from '../../services/brandService';
 
-const { Title } = Typography;
+const { Title, Text } = Typography;
+
+function downloadBlob(data: Blob, filename: string) {
+  const url = URL.createObjectURL(data);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
 
 export default function ProductListPage() {
   const navigate = useNavigate();
@@ -16,12 +23,44 @@ export default function ProductListPage() {
   const [categoryOptions, setCategoryOptions] = useState<any>(null);
   const [brands, setBrands] = useState<any[]>([]);
   const [selectedL1, setSelectedL1] = useState<string>('');
+  const [batchOpen, setBatchOpen] = useState(false);
+  const [batchFile, setBatchFile] = useState<File | null>(null);
+  const [batchPreview, setBatchPreview] = useState<any>(null);
+  const [batchLoading, setBatchLoading] = useState(false);
 
   useEffect(() => {
     fetchProducts();
     productService.getCategoryOptions().then(({ data }) => setCategoryOptions(data));
     brandService.getBrands().then(({ data }) => setBrands(data.results || data));
   }, []);
+
+  const handleBatchUpload = async (file: File) => {
+    setBatchFile(file);
+    try {
+      const { data } = await productService.batchImport(file, false);
+      setBatchPreview(data);
+      message.info(`解析完成：${data.product_count} 个产品`);
+    } catch (err: any) {
+      message.error(err.response?.data?.detail || '解析失败');
+    }
+  };
+
+  const handleBatchConfirm = async () => {
+    if (!batchFile) { message.error('请先上传文件'); return; }
+    setBatchLoading(true);
+    try {
+      const { data } = await productService.batchImport(batchFile, true);
+      message.success(`导入成功：新增 ${data.created}，更新 ${data.updated}`);
+      setBatchOpen(false);
+      setBatchFile(null);
+      setBatchPreview(null);
+      fetchProducts();
+    } catch (err: any) {
+      message.error(err.response?.data?.detail || '导入失败');
+    } finally {
+      setBatchLoading(false);
+    }
+  };
 
   const handleDeactivate = async (id: number) => {
     try {
@@ -102,7 +141,12 @@ export default function ProductListPage() {
     <div>
       <Space style={{ marginBottom: 16, justifyContent: 'space-between', width: '100%' }}>
         <Title level={4} style={{ margin: 0 }}>产品管理</Title>
-        {isAdmin && <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/products/new')}>新建产品</Button>}
+        {isAdmin && (
+          <Space>
+            <Button icon={<ImportOutlined />} onClick={() => setBatchOpen(true)}>批量导入</Button>
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/products/new')}>新建产品</Button>
+          </Space>
+        )}
       </Space>
       <Space style={{ marginBottom: 16 }} wrap>
         <Input.Search placeholder="搜索产品..." allowClear onSearch={(v) => setFilters({ search: v })} style={{ width: 220 }} />
@@ -133,6 +177,49 @@ export default function ProductListPage() {
         pagination={{ current: page, pageSize, total, onChange: setPage }}
         onRow={(r) => ({ onClick: () => navigate(`/products/${r.id}`), style: { cursor: 'pointer' } })}
         columns={columns} />
+
+      <Modal
+        title="批量导入产品"
+        open={batchOpen}
+        onCancel={() => { setBatchOpen(false); setBatchFile(null); setBatchPreview(null); }}
+        onOk={handleBatchConfirm}
+        confirmLoading={batchLoading}
+        okText="确认导入"
+        okButtonProps={{ disabled: !batchPreview || batchPreview.errors?.length > 0 }}
+        width={640}
+      >
+        <Space direction="vertical" style={{ width: '100%' }} size="middle">
+          <Button icon={<DownloadOutlined />} onClick={() =>
+            productService.downloadBatchTemplate().then(({ data }) => downloadBlob(data, 'product_batch_template.xlsx'))
+          }>下载导入模板（长格式：产品 + 配置参数）</Button>
+          <Upload
+            accept=".xlsx"
+            maxCount={1}
+            showUploadList={false}
+            beforeUpload={(file) => { handleBatchUpload(file); return false; }}
+          >
+            <Button icon={<UploadOutlined />} type="dashed" block>上传并预览</Button>
+          </Upload>
+          {batchFile && <Text type="secondary">已选择：{batchFile.name}</Text>}
+          {batchPreview && (
+            <div style={{ background: '#f6ffed', padding: 12, borderRadius: 4 }}>
+              <Text>共解析 <Text strong>{batchPreview.product_count}</Text> 个产品</Text>
+              {(batchPreview.products || []).map((p: any) => (
+                <div key={p.name} style={{ marginTop: 4 }}>
+                  <Text type="secondary">
+                    {p.name}（{p.code || '无编号'}）：{p.dimension_count} 维度 / {p.option_count} 选项 / {p.preset_count} 款式
+                  </Text>
+                </div>
+              ))}
+              {batchPreview.errors?.length > 0 && (
+                <div style={{ color: 'red', marginTop: 8 }}>
+                  {batchPreview.errors.map((e: string, i: number) => <div key={i}>{e}</div>)}
+                </div>
+              )}
+            </div>
+          )}
+        </Space>
+      </Modal>
     </div>
   );
 }

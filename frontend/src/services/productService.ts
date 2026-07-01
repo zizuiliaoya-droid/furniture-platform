@@ -21,6 +21,16 @@ export const productService = {
     api.post(`/api/products/import/${confirm ? '?confirm=true' : ''}`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
   downloadImportTemplate: () => api.get('/api/products/import/template/', { responseType: 'blob' }),
 
+  // ─── 批量产品导入（长格式，多产品） ────────────────────────────────────────
+  batchImport: (file: File, confirm = false) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    return api.post(`/api/products/batch-import/${confirm ? '?confirm=true' : ''}`, fd,
+      { headers: { 'Content-Type': 'multipart/form-data' } });
+  },
+  downloadBatchTemplate: () => api.get('/api/products/batch-template/', { responseType: 'blob' }),
+  exportConfig: (id: number) => api.get(`/api/products/${id}/export-config/`, { responseType: 'blob' }),
+
   // ─── 旧配置（兼容保留） ────────────────────────────────────────────────────
   getConfigs: (productId: number) => api.get(`/api/products/${productId}/configs/`),
   createConfig: (productId: number, data: any) => api.post(`/api/products/${productId}/configs/`, data),

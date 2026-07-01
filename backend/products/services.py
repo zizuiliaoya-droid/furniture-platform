@@ -11,7 +11,7 @@ from django.db import transaction
 from common.file_storage import FileStorageService
 from .models import (
     Brand, Category, Product, ProductConfig, ProductConfigDimension,
-    ProductImage, ProductPriceMatrix, ProductPriceRule,
+    ProductConfigPreset, ProductImage, ProductPriceMatrix, ProductPriceRule,
 )
 
 
@@ -561,3 +561,237 @@ class CategoryOptionsService:
         for l1, items in cls.L1_L2_MAP.items():
             l2_options[l1] = [{'value': v, 'label': label} for v, label in items]
         return {'category_l1': l1_options, 'category_l2': l2_options}
+
+
+# ─── 批量产品导入（长格式，多产品单表） ──────────────────────────────────────
+
+class BatchProductImportService:
+    """
+    批量产品导入 —— 采用客户长格式（竖排），支持一次导入多个产品。
+
+    模板两个 Sheet：
+      「产品」   : 产品类别 | 编号 | 一级分类 | 二级分类 | 品牌 | 产地 | 货期 | 形状 | 定价模式 | 描述
+      「配置参数」: 产品类别 | 配置大类 | 部件/材质 | 规格/代码 | 价格 | 是否默认配置
+
+    规则：
+      - 「产品」每行 → 幂等创建/更新 Product（按编号优先，否则按名称匹配 name=产品类别）。
+      - 「配置参数」按 (产品类别, 配置大类) 分组 → 每个配置大类 = 一个 ProductConfigDimension，
+        行 = 选项（规格/代码 作 key，部件/材质+规格/代码 作 label）。
+      - "配置款式" 类的行 → ProductConfigPreset（code=规格/代码，label=部件/材质）。
+      - 是否默认配置=TRUE → 标记默认预设 / 默认选项。
+      - 价格列可空：填了价则写入 ProductPriceRule（dimension_key, option_key, price_delta=价格）作为
+        结构化留存；最终整机查表定价以后续确认的价格表为准。
+    """
+
+    ORIGIN_MAP = {'进口': 'IMPORT', '国产': 'DOMESTIC', 'IMPORT': 'IMPORT', 'DOMESTIC': 'DOMESTIC'}
+    PRODUCT_SHEET = '产品'
+    CONFIG_SHEET = '配置参数'
+    STYLE_DIMENSION_KEYS = ('配置款式', '款式')  # 视为预设款式的配置大类名
+
+    @staticmethod
+    def _truthy(v) -> bool:
+        return str(v or '').strip().upper() in ('TRUE', '1', '是', 'Y', 'YES', '默认')
+
+    @classmethod
+    def generate_template(cls) -> bytes:
+        wb = openpyxl.Workbook()
+        ws1 = wb.active
+        ws1.title = cls.PRODUCT_SHEET
+        ws1.append(['产品类别', '编号', '一级分类', '二级分类', '品牌', '产地', '货期', '形状', '定价模式', '描述'])
+        ws1.append(['Leader 升降经理桌', 'ZK-LEADER-01', 'DESKS_WORKSTATIONS', 'HEIGHT_ADJUSTABLE_DESK',
+                    'ZIKOO', '国产', 'WITHIN_45D', '方形', 'MATRIX', '示例产品'])
+
+        ws2 = wb.create_sheet(cls.CONFIG_SHEET)
+        ws2.append(['产品类别', '配置大类', '部件/材质', '规格/代码', '价格', '是否默认配置'])
+        ws2.append(['Leader 升降经理桌', '桌板材质', '科技木皮', 'VT-01 科技浅橡木', '', ''])
+        ws2.append(['Leader 升降经理桌', '产品规格', '规格21', 'W2100*D1800*H650/1250', '', 'TRUE'])
+        ws2.append(['Leader 升降经理桌', '配置款式', 'WW', '白色钢脚+白色边框+木皮台面', '', 'TRUE'])
+
+        buf = BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        return buf.getvalue()
+
+    @classmethod
+    def parse(cls, file) -> dict:
+        wb = openpyxl.load_workbook(file, read_only=True, data_only=True)
+        errors = []
+        products = {}  # name -> meta dict
+
+        # 解析「产品」sheet
+        if cls.PRODUCT_SHEET not in wb.sheetnames:
+            errors.append(f'缺少「{cls.PRODUCT_SHEET}」sheet')
+        else:
+            ws = wb[cls.PRODUCT_SHEET]
+            rows = list(ws.iter_rows(min_row=1, values_only=True))
+            if len(rows) > 1:
+                headers = [str(h or '').strip() for h in rows[0]]
+                for i, row in enumerate(rows[1:], start=2):
+                    data = dict(zip(headers, row))
+                    name = str(data.get('产品类别', '') or '').strip()
+                    if not name:
+                        continue
+                    products[name] = {
+                        'name': name,
+                        'code': str(data.get('编号', '') or '').strip() or None,
+                        'category_l1': str(data.get('一级分类', '') or '').strip() or 'SEATING',
+                        'category_l2': str(data.get('二级分类', '') or '').strip(),
+                        'brand': str(data.get('品牌', '') or '').strip(),
+                        'origin': cls.ORIGIN_MAP.get(str(data.get('产地', '') or '').strip(), 'DOMESTIC'),
+                        'lead_time': str(data.get('货期', '') or '').strip(),
+                        'shape': str(data.get('形状', '') or '').strip(),
+                        'pricing_mode': (str(data.get('定价模式', '') or 'MATRIX').strip().upper()
+                                         if str(data.get('定价模式', '') or '').strip().upper() in ('MATRIX', 'RULE')
+                                         else 'MATRIX'),
+                        'description': str(data.get('描述', '') or '').strip(),
+                        'dimensions': {},   # 配置大类 -> [ {key,label,price,is_default}, ... ]
+                        'presets': [],      # [ {code,label,is_default} ]
+                    }
+
+        # 解析「配置参数」sheet
+        if cls.CONFIG_SHEET not in wb.sheetnames:
+            errors.append(f'缺少「{cls.CONFIG_SHEET}」sheet')
+        else:
+            ws = wb[cls.CONFIG_SHEET]
+            rows = list(ws.iter_rows(min_row=1, values_only=True))
+            if len(rows) > 1:
+                headers = [str(h or '').strip() for h in rows[0]]
+                for i, row in enumerate(rows[1:], start=2):
+                    data = dict(zip(headers, row))
+                    pname = str(data.get('产品类别', '') or '').strip()
+                    big = str(data.get('配置大类', '') or '').strip()
+                    part = str(data.get('部件/材质', '') or '').strip()
+                    code = str(data.get('规格/代码', '') or '').strip()
+                    price_raw = data.get('价格')
+                    is_default = cls._truthy(data.get('是否默认配置'))
+                    if not pname or not big:
+                        continue
+                    if pname not in products:
+                        # 「产品」sheet 未声明的产品，自动补一个占位
+                        products[pname] = {
+                            'name': pname, 'code': None, 'category_l1': 'SEATING', 'category_l2': '',
+                            'brand': '', 'origin': 'DOMESTIC', 'lead_time': '', 'shape': '',
+                            'pricing_mode': 'MATRIX', 'description': '',
+                            'dimensions': {}, 'presets': [],
+                        }
+                    p = products[pname]
+                    price = None
+                    if price_raw not in (None, ''):
+                        try:
+                            price = Decimal(str(price_raw))
+                        except Exception:
+                            errors.append(f'{cls.CONFIG_SHEET} 第{i}行: 价格格式错误({price_raw})')
+                    opt_key = code or part
+                    opt_label = (f'{code} {part}'.strip() if code and part else (code or part))
+                    if big in cls.STYLE_DIMENSION_KEYS:
+                        p['presets'].append({'code': opt_key, 'label': part or code, 'is_default': is_default})
+                    else:
+                        p['dimensions'].setdefault(big, [])
+                        p['dimensions'][big].append({
+                            'key': opt_key, 'label': opt_label, 'price': price, 'is_default': is_default,
+                        })
+
+        summary = {
+            'product_count': len(products),
+            'products': [
+                {
+                    'name': p['name'], 'code': p['code'],
+                    'dimension_count': len(p['dimensions']),
+                    'option_count': sum(len(v) for v in p['dimensions'].values()),
+                    'preset_count': len(p['presets']),
+                }
+                for p in products.values()
+            ],
+            'errors': errors,
+        }
+        return {'products': products, 'summary': summary, 'errors': errors}
+
+    @classmethod
+    @transaction.atomic
+    def execute_import(cls, parsed: dict, user):
+        from .models import Brand as _Brand
+        created, updated = 0, 0
+        for meta in parsed['products'].values():
+            # 品牌
+            brand = None
+            if meta['brand']:
+                brand, _ = _Brand.objects.get_or_create(name=meta['brand'])
+            # 产品（编号优先匹配）
+            product = None
+            if meta['code']:
+                product = Product.objects.filter(code=meta['code']).first()
+            if not product:
+                product = Product.objects.filter(name=meta['name']).first()
+            fields = dict(
+                name=meta['name'], code=meta['code'],
+                category_l1=meta['category_l1'], category_l2=meta['category_l2'],
+                brand=brand, origin=meta['origin'], lead_time=meta['lead_time'],
+                shape=meta['shape'], pricing_mode=meta['pricing_mode'],
+                description=meta['description'],
+            )
+            if product:
+                for k, v in fields.items():
+                    setattr(product, k, v)
+                product.save()
+                updated += 1
+            else:
+                product = Product.objects.create(created_by=user, **fields)
+                created += 1
+
+            # 重建维度 / 价格 / 预设
+            ProductConfigDimension.objects.filter(product=product).delete()
+            ProductPriceRule.objects.filter(product=product).delete()
+            ProductConfigPreset.objects.filter(product=product).delete()
+
+            for order, (big, opts) in enumerate(meta['dimensions'].items()):
+                ProductConfigDimension.objects.create(
+                    product=product, dimension_key=big, dimension_label=big,
+                    options=[{'key': o['key'], 'label': o['label']} for o in opts],
+                    is_required=True, sort_order=order,
+                )
+                for o in opts:
+                    if o['price'] is not None:
+                        ProductPriceRule.objects.create(
+                            product=product, dimension_key=big, option_key=o['key'],
+                            price_delta=o['price'],
+                        )
+            for order, preset in enumerate(meta['presets']):
+                ProductConfigPreset.objects.create(
+                    product=product, code=preset['code'], label=preset['label'],
+                    selections={}, is_default=preset['is_default'], sort_order=order,
+                )
+        return {'created': created, 'updated': updated}
+
+
+# ─── 产品配置导出 ─────────────────────────────────────────────────────────────
+
+class ConfigExportService:
+    """导出单个产品当前配置数据为 Excel（PM-6）"""
+
+    @staticmethod
+    def export(product: Product) -> bytes:
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = 'dimensions'
+        ws.append(['dimension_key', 'dimension_label', 'options', 'parent_dimension', 'is_required', 'sort_order'])
+        for d in product.config_dimensions.all():
+            opts = ','.join(
+                (o.get('key', '') if isinstance(o, dict) else str(o)) for o in (d.options or [])
+            )
+            ws.append([d.dimension_key, d.dimension_label, opts, d.parent_dimension,
+                       'TRUE' if d.is_required else 'FALSE', d.sort_order])
+
+        ws2 = wb.create_sheet('pricing')
+        if product.pricing_mode == 'MATRIX':
+            ws2.append(['config_signature', 'config_attributes', 'price'])
+            for m in product.price_matrix.all():
+                ws2.append([m.config_signature, json.dumps(m.config_attributes, ensure_ascii=False), str(m.price)])
+        else:
+            ws2.append(['dimension_key', 'option_key', 'price_delta'])
+            for r in product.price_rules.all():
+                ws2.append([r.dimension_key, r.option_key, str(r.price_delta)])
+
+        buf = BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        return buf.getvalue()

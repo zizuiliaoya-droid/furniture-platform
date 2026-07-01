@@ -22,6 +22,7 @@ from .serializers import (
 )
 from .services import (
     CategoryOptionsService, CategoryService, ConfigExcelService,
+    ConfigExportService, BatchProductImportService,
     PriceCalculationService, ProductImageService, ProductImportService,
 )
 
@@ -281,6 +282,40 @@ class ProductViewSet(ModelViewSet):
     @action(detail=False, methods=['get'], url_path='category-options')
     def category_options(self, request):
         return Response(CategoryOptionsService.get_options())
+
+    # ─── 批量产品导入（长格式，多产品） ───────────────────────────────────────
+
+    @action(detail=False, methods=['post'], url_path='batch-import',
+            permission_classes=[IsAuthenticated, IsAdminRole])
+    def batch_import(self, request):
+        file = request.FILES.get('file')
+        if not file or not file.name.endswith('.xlsx'):
+            return Response({'detail': '请上传 .xlsx 格式文件'}, status=status.HTTP_400_BAD_REQUEST)
+        parsed = BatchProductImportService.parse(file)
+        if request.query_params.get('confirm') == 'true':
+            if parsed['errors']:
+                return Response({'detail': '存在错误，无法导入', 'errors': parsed['errors']},
+                                status=status.HTTP_400_BAD_REQUEST)
+            result = BatchProductImportService.execute_import(parsed, request.user)
+            return Response({'detail': '导入成功', **result})
+        return Response(parsed['summary'])
+
+    @action(detail=False, methods=['get'], url_path='batch-template',
+            permission_classes=[IsAuthenticated, IsAdminRole])
+    def download_batch_template(self, request):
+        content = BatchProductImportService.generate_template()
+        resp = HttpResponse(content, content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        resp['Content-Disposition'] = 'attachment; filename="product_batch_template.xlsx"'
+        return resp
+
+    @action(detail=True, methods=['get'], url_path='export-config',
+            permission_classes=[IsAuthenticated, IsAdminRole])
+    def export_config(self, request, pk=None):
+        product = self.get_object()
+        content = ConfigExportService.export(product)
+        resp = HttpResponse(content, content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        resp['Content-Disposition'] = f'attachment; filename="product_{product.id}_config.xlsx"'
+        return resp
 
 
 # ─── 独立视图函数 ─────────────────────────────────────────────────────────────

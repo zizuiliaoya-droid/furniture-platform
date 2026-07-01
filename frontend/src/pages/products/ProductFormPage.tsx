@@ -249,6 +249,22 @@ export default function ProductFormPage() {
                 </Col>
               </Row>
 
+              <Row gutter={16}>
+                <Col span={8}>
+                  <Form.Item name="shape" label="形状">
+                    <Select allowClear placeholder="方形/圆形/L形/异形…" options={[
+                      { value: '方形', label: '方形' },
+                      { value: '圆形', label: '圆形' },
+                      { value: 'L形', label: 'L形' },
+                      { value: '异形', label: '异形' },
+                    ]} />
+                  </Form.Item>
+                </Col>
+                <Col span={8}>
+                  <Form.Item name="diameter_mm" label="直径 (mm，圆形用)"><InputNumber style={{ width: '100%' }} min={0} /></Form.Item>
+                </Col>
+              </Row>
+
               <Form.Item name="official_url" label="官网链接"><Input /></Form.Item>
               <Form.Item name="model_3d_url" label="3D 模型链接"><Input /></Form.Item>
               <Form.Item name="description" label="产品描述"><TextArea rows={4} /></Form.Item>
@@ -310,7 +326,17 @@ export default function ProductFormPage() {
           children: (
             <Space direction="vertical" style={{ width: '100%' }} size="large">
               {/* 已有维度列表 */}
-              <Card title="已有配置维度" size="small">
+              <Card title="已有配置维度" size="small"
+                extra={
+                  <Button size="small" icon={<UploadOutlined />} onClick={() =>
+                    productService.exportConfig(Number(id)).then(({ data }) => {
+                      const url = URL.createObjectURL(data);
+                      const a = document.createElement('a'); a.href = url; a.download = `product_${id}_config.xlsx`; a.click();
+                      URL.revokeObjectURL(url);
+                    })
+                  }>导出配置</Button>
+                }
+              >
                 <Table
                   dataSource={dimensions}
                   rowKey="id"

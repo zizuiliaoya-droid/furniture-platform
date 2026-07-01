@@ -104,9 +104,9 @@ class Product(models.Model):
     code = models.CharField(max_length=50, unique=True, null=True, blank=True)
     description = models.TextField(blank=True, default='')
 
-    # 新分类体系
+    # 新分类体系（取值由 CategoryOptionsService 维护，不在模型层写死 choices 以便灵活扩展）
     category_l1 = models.CharField(max_length=20, choices=CATEGORY_L1_CHOICES, default='SEATING')
-    category_l2 = models.CharField(max_length=40, choices=CATEGORY_L2_CHOICES, blank=True, default='')
+    category_l2 = models.CharField(max_length=40, blank=True, default='')
     brand = models.ForeignKey(Brand, on_delete=models.PROTECT, null=True, blank=True, related_name='products')
     origin = models.CharField(max_length=10, choices=ORIGIN_CHOICES, default='IMPORT')
     lead_time = models.CharField(max_length=40, choices=LEAD_TIME_CHOICES, blank=True, default='')
@@ -118,10 +118,12 @@ class Product(models.Model):
     min_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True,
                                     help_text='最低售价（列表展示）')
 
-    # 尺寸
+    # 尺寸 / 形状（形状可扩展，尺寸随形状可选：方形用长宽高、圆形用直径，多规格则由"规格"配置维度承载）
+    shape = models.CharField(max_length=20, blank=True, default='', help_text='形状：方形/圆形/L形/异形 等，可扩展')
     length_mm = models.IntegerField(null=True, blank=True, help_text='长度(mm)')
     width_mm = models.IntegerField(null=True, blank=True, help_text='宽度(mm)')
     height_mm = models.IntegerField(null=True, blank=True, help_text='高度(mm)')
+    diameter_mm = models.IntegerField(null=True, blank=True, help_text='直径(mm)，圆形用')
 
     # 扩展信息
     official_url = models.URLField(max_length=500, blank=True, default='')
@@ -271,3 +273,21 @@ class ProductDocument(models.Model):
 
     def __str__(self):
         return f"{self.product.name} - {self.document.name} ({self.relation_type})"
+
+
+class ProductConfigPreset(models.Model):
+    """预设配置 / 默认款式（QT-9：默认配置一键带入；批量导入的"配置款式"WW/WH 等）"""
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='config_presets')
+    code = models.CharField(max_length=100, help_text='款式代码，如 WW / WH')
+    label = models.CharField(max_length=200, blank=True, default='', help_text='款式说明')
+    selections = models.JSONField(default=dict, help_text='预设选项组合 {"维度":"选项",...}')
+    is_default = models.BooleanField(default=False, help_text='是否默认配置')
+    sort_order = models.IntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('product', 'code')
+        ordering = ['sort_order', 'id']
+
+    def __str__(self):
+        return f"{self.product.name} - {self.code}{'(默认)' if self.is_default else ''}"

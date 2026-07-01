@@ -2,7 +2,7 @@
 from rest_framework import serializers
 from .models import (
     Brand, Category, Product, ProductCategory, ProductConfig,
-    ProductConfigDimension, ProductDocument, ProductImage,
+    ProductConfigDimension, ProductConfigPreset, ProductDocument, ProductImage,
     ProductPriceMatrix, ProductPriceRule,
 )
 
@@ -72,6 +72,14 @@ class ProductConfigDimensionWriteSerializer(serializers.ModelSerializer):
         ]
 
 
+# ─── ProductConfigPreset（预设/默认配置） ─────────────────────────────────────
+
+class ProductConfigPresetSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ProductConfigPreset
+        fields = ['id', 'code', 'label', 'selections', 'is_default', 'sort_order']
+
+
 # ─── ProductPriceMatrix ───────────────────────────────────────────────────────
 
 class ProductPriceMatrixSerializer(serializers.ModelSerializer):
@@ -137,6 +145,7 @@ class ProductDetailSerializer(serializers.ModelSerializer):
     images = ProductImageSerializer(many=True, read_only=True)
     configs = ProductConfigSerializer(many=True, read_only=True)
     config_dimensions = ProductConfigDimensionSerializer(many=True, read_only=True)
+    config_presets = ProductConfigPresetSerializer(many=True, read_only=True)
     brand_name = serializers.CharField(source='brand.name', read_only=True, default='')
     created_by_name = serializers.CharField(source='created_by.display_name', read_only=True)
 
@@ -146,9 +155,9 @@ class ProductDetailSerializer(serializers.ModelSerializer):
             'id', 'name', 'code', 'description',
             'category_l1', 'category_l2', 'brand', 'brand_name',
             'origin', 'lead_time', 'pricing_mode', 'base_price', 'min_price',
-            'length_mm', 'width_mm', 'height_mm',
+            'shape', 'length_mm', 'width_mm', 'height_mm', 'diameter_mm',
             'official_url', 'material_album', 'model_3d_url',
-            'is_active', 'images', 'configs', 'config_dimensions',
+            'is_active', 'images', 'configs', 'config_dimensions', 'config_presets',
             'created_by', 'created_by_name', 'created_at', 'updated_at',
         ]
         read_only_fields = ['id', 'created_by', 'created_at', 'updated_at']
@@ -163,7 +172,7 @@ class ProductCreateUpdateSerializer(serializers.ModelSerializer):
             'name', 'code', 'description',
             'category_l1', 'category_l2', 'brand', 'origin', 'lead_time',
             'pricing_mode', 'base_price', 'min_price',
-            'length_mm', 'width_mm', 'height_mm',
+            'shape', 'length_mm', 'width_mm', 'height_mm', 'diameter_mm',
             'official_url', 'material_album', 'model_3d_url',
             'is_active',
         ]
