@@ -35,6 +35,7 @@ export default function ProductDetailPage() {
   const { id } = useParams();
   const [searchParams] = useSearchParams();
   const preselectedQuoteId = searchParams.get('quoteId');
+  const preselectedSelectionsRaw = searchParams.get('selections');
   const [product, setProduct] = useState<any>(null);
   const [dimensions, setDimensions] = useState<any[]>([]);
   const [selections, setSelections] = useState<Record<string, string>>({});
@@ -123,10 +124,21 @@ export default function ProductDetailPage() {
 
   const hasDefault = dimensions.length > 0 && Object.keys(defaultSelections).length > 0;
 
-  // 有配置维度时默认进入"默认配置"模式
+  // 有配置维度时默认进入"默认配置"模式；若 URL 带 selections（QT-5 改配置跳转），用自定义模式并预填
   useEffect(() => {
-    if (dimensions.length > 0) setConfigMode('default');
-  }, [dimensions.length]);
+    if (!dimensions.length) return;
+    if (preselectedSelectionsRaw) {
+      try {
+        const pre = JSON.parse(decodeURIComponent(preselectedSelectionsRaw));
+        if (pre && typeof pre === 'object') {
+          setConfigMode('custom');
+          setSelections(pre);
+          return;
+        }
+      } catch { /* ignore */ }
+    }
+    setConfigMode('default');
+  }, [dimensions.length, preselectedSelectionsRaw]);
 
   // 默认配置模式：锁定为默认选项组合
   useEffect(() => {

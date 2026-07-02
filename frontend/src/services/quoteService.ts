@@ -24,4 +24,11 @@ export const quoteService = {
   /** 一键加入报价单（从产品详情页） */
   addItemFromProduct: (quoteId: number, payload: AddItemFromProductPayload) =>
     api.post(`/api/quotes/${quoteId}/items/from-product/`, payload),
+
+  // QT-7/8 分享
+  listShares: (quoteId: number) => api.get(`/api/quotes/${quoteId}/shares/`),
+  addShare: (quoteId: number, user_id: number) =>
+    api.post(`/api/quotes/${quoteId}/shares/`, { user_id }),
+  removeShare: (quoteId: number, userId: number) =>
+    api.delete(`/api/quotes/${quoteId}/shares/${userId}/`),
 };

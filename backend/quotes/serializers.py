@@ -1,6 +1,6 @@
 """Quote serializers."""
 from rest_framework import serializers
-from .models import Quote, QuoteItem
+from .models import Quote, QuoteItem, QuoteShare
 
 
 class QuoteItemSerializer(serializers.ModelSerializer):
@@ -57,3 +57,14 @@ class AddItemFromProductSerializer(serializers.Serializer):
     image_id = serializers.IntegerField(required=False, allow_null=True)
     quantity = serializers.IntegerField(default=1, min_value=1)
     discount = serializers.DecimalField(max_digits=5, decimal_places=2, default=0, min_value=0, max_value=100)
+
+
+
+class QuoteShareSerializer(serializers.ModelSerializer):
+    shared_with_name = serializers.CharField(source='shared_with.display_name', read_only=True)
+    shared_with_username = serializers.CharField(source='shared_with.username', read_only=True)
+
+    class Meta:
+        model = QuoteShare
+        fields = ['id', 'quote', 'shared_with', 'shared_with_name', 'shared_with_username', 'created_at']
+        read_only_fields = ['id', 'quote', 'created_at']

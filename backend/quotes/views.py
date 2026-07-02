@@ -8,10 +8,13 @@ from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
 from auth_app.permissions import IsAdminRole
-from .models import Quote, QuoteItem
+from django.db.models import Q as _Q
+
+from .models import Quote, QuoteItem, QuoteShare
 from .serializers import (
     AddItemFromProductSerializer, QuoteCreateUpdateSerializer,
     QuoteDetailSerializer, QuoteItemSerializer, QuoteListSerializer,
+    QuoteShareSerializer,
 )
 from .services import QuoteService
 
@@ -20,13 +23,23 @@ class QuoteViewSet(ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
+        user = self.request.user
         qs = Quote.objects.select_related('created_by').prefetch_related('items')
+        # QT-7/8 可见性：管理员看全部；普通员工看自己创建的 + 被分享的
+        if getattr(user, 'role', 'STAFF') != 'ADMIN':
+            qs = qs.filter(_Q(created_by=user) | _Q(shares__shared_with=user)).distinct()
         search = self.request.query_params.get('search')
         if search:
             qs = qs.filter(Q(title__icontains=search) | Q(customer_name__icontains=search))
         s = self.request.query_params.get('status')
         if s:
             qs = qs.filter(status=s)
+        # 前端"我创建的 / 分享给我的"分组过滤
+        mine = self.request.query_params.get('mine')
+        if mine == 'true':
+            qs = qs.filter(created_by=user)
+        elif mine == 'shared':
+            qs = qs.filter(shares__shared_with=user).exclude(created_by=user).distinct()
         return qs
 
     def get_serializer_class(self):
@@ -44,15 +57,52 @@ class QuoteViewSet(ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
 
+    def _assert_owner_or_admin(self, quote):
+        user = self.request.user
+        if getattr(user, 'role', 'STAFF') == 'ADMIN' or quote.created_by_id == user.id:
+            return
+        from rest_framework.exceptions import PermissionDenied
+        raise PermissionDenied('该报价单为只读（他人分享）')
+
     def perform_update(self, serializer):
+        self._assert_owner_or_admin(serializer.instance)
         new_status = serializer.validated_data.get('status')
         if new_status and new_status != serializer.instance.status:
             if not QuoteService.validate_status_change(serializer.instance.status, new_status):
                 from rest_framework.exceptions import ValidationError
                 raise ValidationError(f'不允许从 {serializer.instance.status} 变更为 {new_status}')
         quote = serializer.save()
-        # 整单折扣可能变化，重算总价
         quote.recalculate_total()
+
+    def perform_destroy(self, instance):
+        self._assert_owner_or_admin(instance)
+        instance.delete()
+
+    @action(detail=True, methods=['get', 'post'], url_path='shares')
+    def shares(self, request, pk=None):
+        quote = self.get_object()
+        if request.method == 'GET':
+            return Response(QuoteShareSerializer(quote.shares.select_related('shared_with'), many=True).data)
+        self._assert_owner_or_admin(quote)
+        user_id = request.data.get('user_id')
+        if not user_id:
+            return Response({'detail': '缺少 user_id'}, status=status.HTTP_400_BAD_REQUEST)
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        try:
+            target = User.objects.get(pk=user_id)
+        except User.DoesNotExist:
+            return Response({'detail': '用户不存在'}, status=status.HTTP_404_NOT_FOUND)
+        share, _ = QuoteShare.objects.get_or_create(
+            quote=quote, shared_with=target, defaults={'created_by': request.user})
+        return Response(QuoteShareSerializer(share).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['delete'], url_path=r'shares/(?P<user_id>\d+)')
+    def remove_share(self, request, pk=None, user_id=None):
+        quote = self.get_object()
+        self._assert_owner_or_admin(quote)
+        QuoteShare.objects.filter(quote=quote, shared_with_id=user_id).delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=True, methods=['post'])
     def duplicate(self, request, pk=None):
@@ -88,11 +138,20 @@ class QuoteItemViewSet(ModelViewSet):
         item = serializer.save(quote_id=self.kwargs['quote_pk'])
         item.quote.recalculate_total()
 
+    def _check_write(self, quote):
+        user = self.request.user
+        if getattr(user, 'role', 'STAFF') == 'ADMIN' or quote.created_by_id == user.id:
+            return
+        from rest_framework.exceptions import PermissionDenied
+        raise PermissionDenied('该报价单为只读（他人分享）')
+
     def perform_update(self, serializer):
+        self._check_write(serializer.instance.quote)
         item = serializer.save()
         item.quote.recalculate_total()
 
     def perform_destroy(self, instance):
+        self._check_write(instance.quote)
         quote = instance.quote
         instance.delete()
         quote.recalculate_total()

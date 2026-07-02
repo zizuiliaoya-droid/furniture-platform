@@ -69,8 +69,11 @@ export default function QuoteListPage() {
         <Title level={4} style={{ margin: 0 }}>报价方案</Title>
         <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/quotes/new')}>新建报价单</Button>
       </Space>
-      <Space style={{ marginBottom: 16 }}>
+      <Space style={{ marginBottom: 16 }} wrap>
         <Input.Search placeholder="搜索标题/客户..." allowClear onSearch={(v) => fetchQuotes({ search: v })} style={{ width: 250 }} />
+        <Select placeholder="归属" allowClear style={{ width: 130 }}
+          options={[{ value: 'true', label: '我创建的' }, { value: 'shared', label: '分享给我的' }]}
+          onChange={(v) => fetchQuotes(v ? { mine: v } : {})} />
         <Select placeholder="状态" allowClear style={{ width: 120 }} onChange={(v) => fetchQuotes(v ? { status: v } : {})}
           options={Object.entries(STATUS_MAP).map(([k, v]) => ({ value: k, label: v.label }))} />
       </Space>

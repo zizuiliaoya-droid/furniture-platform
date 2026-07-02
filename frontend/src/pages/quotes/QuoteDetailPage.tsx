@@ -1,14 +1,16 @@
 import { useEffect, useState } from 'react';
 import {
-  Button, Card, Descriptions, Image, InputNumber, message, Popconfirm,
+  Button, Card, Descriptions, Image, InputNumber, message, Modal, Popconfirm,
   Select, Space, Table, Tag, Tooltip, Typography,
 } from 'antd';
 import {
   CopyOutlined, DeleteOutlined, EditOutlined, FilePdfOutlined,
-  PlusOutlined, ShoppingCartOutlined,
+  PlusOutlined, ShareAltOutlined, ShoppingCartOutlined,
 } from '@ant-design/icons';
 import { useNavigate, useParams } from 'react-router-dom';
 import { quoteService } from '../../services/quoteService';
+import { authService } from '../../services/authService';
+import { useAuthStore } from '../../store/authStore';
 
 const { Title, Text } = Typography;
 
@@ -26,6 +28,43 @@ export default function QuoteDetailPage() {
   const [editingItem, setEditingItem] = useState<number | null>(null);
   const [editValues, setEditValues] = useState<any>({});
   const navigate = useNavigate();
+  const currentUser = useAuthStore((s) => s.user);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [shares, setShares] = useState<any[]>([]);
+  const [users, setUsers] = useState<any[]>([]);
+  const [shareTarget, setShareTarget] = useState<number | null>(null);
+
+  const isOwnerOrAdmin = () => {
+    if (!currentUser || !quote) return false;
+    return currentUser.role === 'ADMIN' || quote.created_by === currentUser.id;
+  };
+
+  const openShareModal = async () => {
+    const [sh, us] = await Promise.all([
+      quoteService.listShares(Number(id)),
+      authService.getUsers(),
+    ]);
+    setShares(sh.data);
+    setUsers(us.data.results || us.data);
+    setShareOpen(true);
+  };
+  const handleAddShare = async () => {
+    if (!shareTarget) return;
+    try {
+      await quoteService.addShare(Number(id), shareTarget);
+      message.success('已分享');
+      const { data } = await quoteService.listShares(Number(id));
+      setShares(data);
+      setShareTarget(null);
+    } catch { message.error('分享失败'); }
+  };
+  const handleRemoveShare = async (userId: number) => {
+    try {
+      await quoteService.removeShare(Number(id), userId);
+      const { data } = await quoteService.listShares(Number(id));
+      setShares(data);
+    } catch { message.error('取消失败'); }
+  };
 
   const loadQuote = () => {
     if (id) quoteService.getQuote(Number(id)).then(({ data }) => setQuote(data));
@@ -132,6 +171,13 @@ export default function QuoteDetailPage() {
       ) : (
         <Space size="small">
           <Button size="small" icon={<EditOutlined />} onClick={() => startEdit(record)} />
+          {record.product && (
+            <Button size="small" onClick={() => {
+              // QT-5：跳转到该产品详情页并预填原配置
+              const sel = encodeURIComponent(JSON.stringify(record.config_attributes || {}));
+              navigate(`/products/${record.product}?quoteId=${id}&selections=${sel}&itemId=${record.id}`);
+            }}>改配置</Button>
+          )}
           <Popconfirm title="确认删除？" onConfirm={() => deleteItem(record.id)}>
             <Button size="small" danger icon={<DeleteOutlined />} />
           </Popconfirm>
@@ -145,9 +191,15 @@ export default function QuoteDetailPage() {
       <Space style={{ marginBottom: 16, justifyContent: 'space-between', width: '100%' }}>
         <Title level={4} style={{ margin: 0 }}>{quote.title}</Title>
         <Space>
-          <Button icon={<EditOutlined />} onClick={() => navigate(`/quotes/${id}/edit`)}>编辑</Button>
+          {isOwnerOrAdmin() && (
+            <Button icon={<EditOutlined />} onClick={() => navigate(`/quotes/${id}/edit`)}>编辑</Button>
+          )}
           <Button icon={<CopyOutlined />} onClick={handleDuplicate}>复制</Button>
+          {isOwnerOrAdmin() && (
+            <Button icon={<ShareAltOutlined />} onClick={openShareModal}>分享</Button>
+          )}
           <Button icon={<FilePdfOutlined />} onClick={handleExportPdf}>导出 PDF</Button>
+          {!isOwnerOrAdmin() && <Tag color="blue">只读（他人分享）</Tag>}
         </Space>
       </Space>
 
@@ -212,6 +264,42 @@ export default function QuoteDetailPage() {
           )}
         />
       </Card>
+
+      <Modal
+        title="分享报价单"
+        open={shareOpen}
+        onCancel={() => setShareOpen(false)}
+        footer={<Button onClick={() => setShareOpen(false)}>关闭</Button>}
+      >
+        <Space direction="vertical" style={{ width: '100%' }}>
+          <Space>
+            <Select
+              placeholder="选择用户"
+              style={{ width: 240 }}
+              value={shareTarget || undefined}
+              onChange={setShareTarget}
+              options={users
+                .filter((u: any) => u.id !== currentUser?.id)
+                .map((u: any) => ({ value: u.id, label: `${u.display_name || u.username} (${u.username})` }))}
+              showSearch
+              optionFilterProp="label"
+            />
+            <Button type="primary" onClick={handleAddShare} disabled={!shareTarget}>分享（只读）</Button>
+          </Space>
+          <div>
+            <Text strong>已分享：</Text>
+            {shares.length === 0 ? <Text type="secondary"> 暂无</Text> : (
+              <Space wrap style={{ marginTop: 6 }}>
+                {shares.map((s: any) => (
+                  <Tag key={s.id} closable onClose={() => handleRemoveShare(s.shared_with)}>
+                    {s.shared_with_name || s.shared_with_username}
+                  </Tag>
+                ))}
+              </Space>
+            )}
+          </div>
+        </Space>
+      </Modal>
     </div>
   );
 }

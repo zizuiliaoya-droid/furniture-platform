@@ -65,3 +65,20 @@ class QuoteItem(models.Model):
     def save(self, *args, **kwargs):
         self.subtotal = self.unit_price * self.quantity * (1 - self.discount / 100)
         super().save(*args, **kwargs)
+
+
+class QuoteShare(models.Model):
+    """报价单分享（按人只读）。QT-7/8：默认仅创建者可见，可按人分享（只读）。"""
+    quote = models.ForeignKey(Quote, on_delete=models.CASCADE, related_name='shares')
+    shared_with = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+                                    related_name='received_quote_shares')
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+                                   null=True, blank=True, related_name='created_quote_shares')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('quote', 'shared_with')
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.quote_id} → {self.shared_with_id}'
