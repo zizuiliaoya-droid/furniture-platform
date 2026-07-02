@@ -16,6 +16,8 @@ class Quote(models.Model):
     status = models.CharField(max_length=15, choices=STATUS_CHOICES, default='DRAFT')
     notes = models.TextField(blank=True, default='')
     terms = models.TextField(blank=True, default='')
+    discount = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal('0'),
+                                   help_text='整单折扣（%），QT-6 取消单项折扣后仅用整单折扣')
     total_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0'))
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -29,8 +31,10 @@ class Quote(models.Model):
         ]
 
     def recalculate_total(self):
-        total = self.items.aggregate(total=models.Sum('subtotal'))['total'] or Decimal('0')
-        self.total_amount = total
+        subtotal = self.items.aggregate(total=models.Sum('subtotal'))['total'] or Decimal('0')
+        # QT-6：整单折扣
+        self.total_amount = (subtotal * (Decimal('1') - (self.discount or Decimal('0')) / Decimal('100'))
+                             ).quantize(Decimal('0.01'))
         self.save(update_fields=['total_amount'])
 
     def __str__(self):

@@ -28,7 +28,7 @@
   <thead>
     <tr>
       <th>#</th><th>图片</th><th>产品名称</th><th>配置</th>
-      <th>单价</th><th>数量</th><th>折扣(%)</th><th>小计</th>
+      <th>单价</th><th>数量</th><th>小计</th>
     </tr>
   </thead>
   <tbody>
@@ -54,13 +54,13 @@
       </td>
       <td>¥{{ item.unit_price }}</td>
       <td>{{ item.quantity }}</td>
-      <td>{{ item.discount }}%</td>
       <td>¥{{ item.subtotal }}</td>
     </tr>
     {% endwith %}
     {% endfor %}
   </tbody>
 </table>
+{% if quote.discount %}<div style="text-align:right; margin: 10px 0;">整单折扣：{{ quote.discount }}%</div>{% endif %}
 <div class="total">总金额：¥{{ quote.total_amount }}</div>
 {% if quote.notes %}<div class="notes"><strong>备注：</strong>{{ quote.notes }}</div>{% endif %}
 {% if quote.terms %}<div class="notes"><strong>条款：</strong>{{ quote.terms }}</div>{% endif %}

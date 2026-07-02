@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Button, Form, Input, message, Typography } from 'antd';
+import { Button, Form, Input, InputNumber, message, Typography } from 'antd';
 import { useNavigate, useParams } from 'react-router-dom';
 import { quoteService } from '../../services/quoteService';
 
@@ -33,6 +33,9 @@ export default function QuoteFormPage() {
       <Form form={form} layout="vertical" onFinish={handleSubmit}>
         <Form.Item name="title" label="报价单标题" rules={[{ required: true }]}><Input /></Form.Item>
         <Form.Item name="customer_name" label="客户名称" rules={[{ required: true }]}><Input /></Form.Item>
+        <Form.Item name="discount" label="整单折扣 (%)" initialValue={0}>
+          <InputNumber min={0} max={100} style={{ width: '100%' }} />
+        </Form.Item>
         <Form.Item name="notes" label="备注"><Input.TextArea rows={3} /></Form.Item>
         <Form.Item name="terms" label="条款"><Input.TextArea rows={3} /></Form.Item>
         <Form.Item><Button type="primary" htmlType="submit" loading={loading}>{isEdit ? '保存' : '创建'}</Button></Form.Item>

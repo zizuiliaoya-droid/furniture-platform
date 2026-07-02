@@ -37,7 +37,7 @@ class QuoteDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = Quote
         fields = [
-            'id', 'title', 'customer_name', 'status', 'notes', 'terms',
+            'id', 'title', 'customer_name', 'status', 'notes', 'terms', 'discount',
             'total_amount', 'items', 'created_by', 'created_by_name',
             'created_at', 'updated_at',
         ]
@@ -47,7 +47,7 @@ class QuoteDetailSerializer(serializers.ModelSerializer):
 class QuoteCreateUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Quote
-        fields = ['title', 'customer_name', 'status', 'notes', 'terms']
+        fields = ['title', 'customer_name', 'status', 'notes', 'terms', 'discount']
 
 
 class AddItemFromProductSerializer(serializers.Serializer):

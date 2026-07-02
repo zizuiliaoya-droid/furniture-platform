@@ -151,7 +151,6 @@ export default function ProductDetailPage() {
         selections,
         image_id: selectedImageId,
         quantity,
-        discount,
       });
       message.success('已加入报价单');
       setQuoteModalOpen(false);
@@ -410,23 +409,19 @@ export default function ProductDetailPage() {
             </div>
           )}
 
-          {/* 数量 + 折扣 */}
+          {/* 数量（QT-6 取消单项折扣，折扣以整单为准） */}
           <Row gutter={16}>
-            <Col span={12}>
+            <Col span={24}>
               <Text strong>数量</Text>
               <InputNumber min={1} value={quantity} onChange={v => setQuantity(v || 1)} style={{ width: '100%', marginTop: 4 }} />
-            </Col>
-            <Col span={12}>
-              <Text strong>折扣 (%)</Text>
-              <InputNumber min={0} max={100} value={discount} onChange={v => setDiscount(v || 0)} style={{ width: '100%', marginTop: 4 }} />
             </Col>
           </Row>
 
           {/* 价格预览 */}
           {priceResult?.valid && (
             <div style={{ background: '#f6ffed', padding: 12, borderRadius: 4 }}>
-              <Text>单价: ¥{priceResult.price} × {quantity} × (1 - {discount}%) = </Text>
-              <Text strong>¥{(Number(priceResult.price) * quantity * (1 - discount / 100)).toFixed(2)}</Text>
+              <Text>单价: ¥{priceResult.price} × {quantity} = </Text>
+              <Text strong>¥{(Number(priceResult.price) * quantity).toFixed(2)}</Text>
             </div>
           )}
         </Space>

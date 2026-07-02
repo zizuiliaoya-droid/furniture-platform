@@ -49,7 +49,7 @@ export default function QuoteDetailPage() {
 
   const startEdit = (item: any) => {
     setEditingItem(item.id);
-    setEditValues({ quantity: item.quantity, discount: item.discount });
+    setEditValues({ quantity: item.quantity });
   };
 
   const saveEdit = async (itemId: number) => {
@@ -120,15 +120,7 @@ export default function QuoteDetailPage() {
       ) : v,
     },
     {
-      title: '折扣',
-      dataIndex: 'discount',
-      width: 100,
-      render: (v: number, record: any) => editingItem === record.id ? (
-        <InputNumber size="small" min={0} max={100} value={editValues.discount} suffix="%"
-          onChange={val => setEditValues((prev: any) => ({ ...prev, discount: val }))} />
-      ) : `${v}%`,
-    },
-    { title: '小计', dataIndex: 'subtotal', width: 100, render: (v: number) => `¥${v}` },
+      title: '小计', dataIndex: 'subtotal', width: 100, render: (v: number) => `¥${v}` },
     {
       title: '操作',
       width: 120,
@@ -179,6 +171,9 @@ export default function QuoteDetailPage() {
               )}
             </Space>
           </Descriptions.Item>
+          <Descriptions.Item label="整单折扣">
+            {Number(quote.discount || 0) > 0 ? `${quote.discount}%` : '无'}
+          </Descriptions.Item>
           <Descriptions.Item label="总金额">
             <Text strong style={{ fontSize: 18 }}>¥{quote.total_amount}</Text>
           </Descriptions.Item>
@@ -206,7 +201,7 @@ export default function QuoteDetailPage() {
           scroll={{ x: 800 }}
           summary={() => (
             <Table.Summary.Row>
-              <Table.Summary.Cell index={0} colSpan={6} align="right">
+              <Table.Summary.Cell index={0} colSpan={5} align="right">
                 <Text strong>合计</Text>
               </Table.Summary.Cell>
               <Table.Summary.Cell index={1}>

@@ -50,7 +50,9 @@ class QuoteViewSet(ModelViewSet):
             if not QuoteService.validate_status_change(serializer.instance.status, new_status):
                 from rest_framework.exceptions import ValidationError
                 raise ValidationError(f'不允许从 {serializer.instance.status} 变更为 {new_status}')
-        serializer.save()
+        quote = serializer.save()
+        # 整单折扣可能变化，重算总价
+        quote.recalculate_total()
 
     @action(detail=True, methods=['post'])
     def duplicate(self, request, pk=None):
