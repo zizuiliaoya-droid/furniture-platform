@@ -14,6 +14,7 @@ interface ProductState {
   pageSize: number;
   fetchProducts: () => Promise<void>;
   setFilters: (filters: Partial<ProductState['filters']>) => void;
+  resetFilters: () => void;
   setPage: (page: number) => void;
 }
 
@@ -39,6 +40,11 @@ export const useProductStore = create<ProductState>((set, get) => ({
 
   setFilters: (filters) => {
     set((state) => ({ filters: { ...state.filters, ...filters }, page: 1 }));
+    get().fetchProducts();
+  },
+
+  resetFilters: () => {
+    set({ filters: {}, page: 1 });
     get().fetchProducts();
   },
 

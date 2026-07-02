@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Button, Card, Col, Descriptions, Divider, Image, InputNumber, List,
-  message, Modal, Row, Select, Space, Spin, Tag, Typography,
+  message, Modal, Radio, Row, Select, Space, Spin, Tag, Typography,
 } from 'antd';
 import { EditOutlined, PlusOutlined, ShoppingCartOutlined } from '@ant-design/icons';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
@@ -46,6 +46,7 @@ export default function ProductDetailPage() {
   const [selectedQuoteId, setSelectedQuoteId] = useState<number | null>(null);
   const [selectedImageId, setSelectedImageId] = useState<number | null>(null);
   const [mainImagePath, setMainImagePath] = useState<string>('');
+  const [configMode, setConfigMode] = useState<'default' | 'custom'>('custom');
   const [quantity, setQuantity] = useState(1);
   const [discount, setDiscount] = useState(0);
   const [addingToQuote, setAddingToQuote] = useState(false);
@@ -105,6 +106,32 @@ export default function ProductDetailPage() {
       return next;
     });
   };
+
+  // QT-9 默认配置：优先取默认预设的选项组合；否则按可见必填维度取首个选项
+  const defaultSelections = useMemo(() => {
+    const preset = (product?.config_presets || []).find(
+      (p: any) => p.is_default && p.selections && Object.keys(p.selections || {}).length
+    );
+    if (preset) return preset.selections as Record<string, string>;
+    const sel: Record<string, string> = {};
+    for (const dim of dimensions) {
+      if (!isDimVisible(dim, sel)) continue;
+      if (dim.options?.length) sel[dim.dimension_key] = dim.options[0].key;
+    }
+    return sel;
+  }, [product, dimensions]);
+
+  const hasDefault = dimensions.length > 0 && Object.keys(defaultSelections).length > 0;
+
+  // 有配置维度时默认进入"默认配置"模式
+  useEffect(() => {
+    if (dimensions.length > 0) setConfigMode('default');
+  }, [dimensions.length]);
+
+  // 默认配置模式：锁定为默认选项组合
+  useEffect(() => {
+    if (configMode === 'default') setSelections(defaultSelections);
+  }, [configMode, defaultSelections]);
 
   const openQuoteModal = useCallback(async () => {
     const { data } = await quoteService.getQuotes({ status: 'DRAFT' });
@@ -218,6 +245,31 @@ export default function ProductDetailPage() {
           {/* 配置选择器 */}
           {dimensions.length > 0 && (
             <Card title="配置选择" style={{ marginTop: 16 }}>
+              {hasDefault && (
+                <Radio.Group
+                  value={configMode}
+                  onChange={(e) => {
+                    const mode = e.target.value;
+                    setConfigMode(mode);
+                    if (mode === 'custom') setSelections({});
+                  }}
+                  style={{ marginBottom: 12 }}
+                >
+                  <Radio value="default">默认配置</Radio>
+                  <Radio value="custom">自定义配置</Radio>
+                </Radio.Group>
+              )}
+              {configMode === 'default' ? (
+                <div style={{ background: '#f6ffed', padding: 12, borderRadius: 4 }}>
+                  <Text type="secondary">默认配置：</Text>
+                  <div style={{ marginTop: 6 }}>
+                    {Object.entries(defaultSelections).map(([k, v]) => {
+                      const dim = dimensions.find((d: any) => d.dimension_key === k);
+                      return <Tag key={k}>{(dim?.dimension_label || k)}: {v}</Tag>;
+                    })}
+                  </div>
+                </div>
+              ) : (
               <Space direction="vertical" style={{ width: '100%' }}>
                 {dimensions.filter((dim: any) => isDimVisible(dim, selections)).map((dim: any) => (
                   <div key={dim.dimension_key}>
@@ -238,6 +290,7 @@ export default function ProductDetailPage() {
                   </div>
                 ))}
               </Space>
+              )}
 
               {/* 实时价格展示 */}
               <Divider />
