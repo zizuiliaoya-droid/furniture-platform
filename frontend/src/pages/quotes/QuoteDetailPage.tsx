@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 import {
-  Button, Card, Descriptions, Image, InputNumber, message, Modal, Popconfirm,
+  Button, Card, Descriptions, Dropdown, Image, InputNumber, message, Modal, Popconfirm,
   Select, Space, Table, Tag, Tooltip, Typography,
 } from 'antd';
 import {
-  CopyOutlined, DeleteOutlined, EditOutlined, FilePdfOutlined,
+  CopyOutlined, DeleteOutlined, DownloadOutlined, EditOutlined, FilePdfOutlined, FileExcelOutlined,
   PlusOutlined, ShareAltOutlined, ShoppingCartOutlined,
 } from '@ant-design/icons';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -83,6 +83,16 @@ export default function QuoteDetailPage() {
     const url = URL.createObjectURL(data);
     const a = document.createElement('a');
     a.href = url; a.download = `quote_${id}.pdf`; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExportExcel = async (fmt: 'sales_order' | 'quotation') => {
+    const { data } = await quoteService.exportExcel(Number(id), fmt);
+    const url = URL.createObjectURL(data);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${fmt}_${id}.xlsx`;
+    a.click();
     URL.revokeObjectURL(url);
   };
 
@@ -198,7 +208,17 @@ export default function QuoteDetailPage() {
           {isOwnerOrAdmin() && (
             <Button icon={<ShareAltOutlined />} onClick={openShareModal}>分享</Button>
           )}
-          <Button icon={<FilePdfOutlined />} onClick={handleExportPdf}>导出 PDF</Button>
+          <Dropdown
+            menu={{
+              items: [
+                { key: 'pdf', icon: <FilePdfOutlined />, label: 'PDF', onClick: handleExportPdf },
+                { key: 'quotation', icon: <FileExcelOutlined />, label: 'Excel · 报价单', onClick: () => handleExportExcel('quotation') },
+                { key: 'sales_order', icon: <FileExcelOutlined />, label: 'Excel · 销售订单', onClick: () => handleExportExcel('sales_order') },
+              ],
+            }}
+          >
+            <Button icon={<DownloadOutlined />}>导出</Button>
+          </Dropdown>
           {!isOwnerOrAdmin() && <Tag color="blue">只读（他人分享）</Tag>}
         </Space>
       </Space>

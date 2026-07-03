@@ -1,7 +1,9 @@
 """Quote services."""
 import os
 from decimal import Decimal
+from io import BytesIO
 
+import openpyxl
 from django.conf import settings
 from django.db import transaction
 from django.template.loader import render_to_string
@@ -141,3 +143,109 @@ class QuoteService:
             label = dim_labels.get(key, key)
             parts.append(f"{label}:{value}")
         return ' / '.join(parts) if parts else ''
+
+
+
+# ─── QT-3 Excel 导出（两种格式） ─────────────────────────────────────────────
+
+class QuoteExcelService:
+    """导出报价单 Excel：两种格式的表头不同，明细列一致。
+
+    列（明细统一）：序号 | 产品名称 | 产品描述 | 配置(默认/自定义) | 颜色 | 单价 | 数量 | 小计 | 产地 | 货期 | 品牌 | 图片
+    """
+    ORIGIN_MAP = {'IMPORT': '进口', 'DOMESTIC': '国产'}
+    LEAD_TIME_MAP = {
+        'WITHIN_45D': '45天内', '2_4M_VIETNAM': '2-4月【越南】',
+        '2_4M_MALAYSIA': '2-4月【马来西亚】', '4_6M_EU': '4-6月【荷兰/意大利/德国】',
+    }
+
+    ITEM_HEADERS = ['序号', '产品名称', '产品描述', '配置', '颜色',
+                    '单价', '数量', '小计', '产地', '货期', '品牌']
+
+    @classmethod
+    def _extract_color(cls, item) -> str:
+        attrs = item.config_attributes or {}
+        for k in ('color', '颜色', 'frame_color_back', 'frame_color', '框架颜色', '框架颜色（背框）'):
+            if k in attrs:
+                return str(attrs[k])
+        return ''
+
+    @classmethod
+    def _config_summary(cls, item) -> str:
+        return item.config_name or ''
+
+    @classmethod
+    def _fill_items(cls, ws, quote, start_row: int):
+        for header_idx, h in enumerate(cls.ITEM_HEADERS, start=1):
+            ws.cell(row=start_row, column=header_idx, value=h)
+        r = start_row + 1
+        for i, item in enumerate(quote.items.all(), start=1):
+            p = item.product
+            row = [
+                i, item.product_name, (p.description if p else ''),
+                cls._config_summary(item), cls._extract_color(item),
+                float(item.unit_price), item.quantity, float(item.subtotal),
+                cls.ORIGIN_MAP.get(p.origin, '') if p else '',
+                cls.LEAD_TIME_MAP.get(p.lead_time, '') if p else '',
+                (p.brand.name if p and p.brand else ''),
+            ]
+            for col_idx, v in enumerate(row, start=1):
+                ws.cell(row=r, column=col_idx, value=v)
+            r += 1
+        # 合计
+        ws.cell(row=r, column=1, value='合计')
+        ws.cell(row=r, column=8, value=float(quote.total_amount))
+        if quote.discount and float(quote.discount) > 0:
+            ws.cell(row=r + 1, column=1, value=f'整单折扣 {quote.discount}%')
+        return r + 2
+
+    @classmethod
+    def export_sales_order(cls, quote) -> bytes:
+        """格式一：销售订单（image5.png 风格）"""
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = '销售订单'
+        ws.append(['销售订单'])
+        ws.append([f'合同编号：ZKZY{quote.id:08d}'])
+        ws.append(['买方：', quote.customer_name, '', '', '卖方：', '杭州智楷家具有限公司'])
+        ws.append(['地址：', '', '', '', '地址：', '杭州市拱墅区'])
+        ws.append(['联系人：', '', '', '', '联系人：', quote.created_by.display_name if quote.created_by else ''])
+        ws.append(['电话：', '', '', '', '电话：', ''])
+        ws.append(['交货日期：', '详见清单备注', '', '', '付款方式：', '汇款'])
+        ws.append([''])
+        cls._fill_items(ws, quote, start_row=9)
+        if quote.notes:
+            ws.append(['备注：', quote.notes])
+        if quote.terms:
+            ws.append(['条款：', quote.terms])
+        buf = BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        return buf.getvalue()
+
+    @classmethod
+    def export_quotation(cls, quote) -> bytes:
+        """格式二：报价单（image6.png 风格，中英双语抬头）"""
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = '报价单'
+        ws.append(['报价单 / Quotation'])
+        ws.append(['ZhiKai Furniture, Hangzhou'])
+        ws.append(['杭州市拱墅区'])
+        ws.append([''])
+        ws.append(['Project / 项目名称：', quote.title,
+                   '', '', 'Quote date / 报价日期：', quote.created_at.strftime('%Y-%m-%d')])
+        ws.append(['Pricing Currency / 计价币种：', 'RMB (yuan) / 人民币（元）',
+                   '', '', 'Account Manager / 销售：', quote.created_by.display_name if quote.created_by else ''])
+        ws.append(['Company / 公司：', '杭州智楷家具有限公司',
+                   '', '', 'Telephone / 电话：', ''])
+        ws.append([''])
+        cls._fill_items(ws, quote, start_row=9)
+        if quote.notes:
+            ws.append(['Notes / 备注：', quote.notes])
+        if quote.terms:
+            ws.append(['Terms / 条款：', quote.terms])
+        buf = BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        return buf.getvalue()
