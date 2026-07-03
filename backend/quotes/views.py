@@ -124,13 +124,16 @@ class QuoteViewSet(ModelViewSet):
 
     @action(detail=True, methods=['get'], url_path='excel')
     def excel(self, request, pk=None):
-        """QT-3 导出 Excel：?format=sales_order|quotation"""
+        """QT-3 导出 Excel：?fmt=sales_order|quotation
+
+        注意：查询参数用 `fmt`，因为 DRF 保留了 `format` 参数用于内容协商。
+        """
         from .services import QuoteExcelService
         try:
             quote = Quote.objects.prefetch_related('items', 'items__product', 'items__product__brand').get(pk=pk)
         except Quote.DoesNotExist:
             return Response(status=status.HTTP_404_NOT_FOUND)
-        fmt = request.query_params.get('format', 'quotation')
+        fmt = request.query_params.get('fmt', 'quotation')
         if fmt == 'sales_order':
             content = QuoteExcelService.export_sales_order(quote)
             name = f'sales_order_{pk}.xlsx'
