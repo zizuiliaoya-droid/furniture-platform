@@ -4,6 +4,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 import LoginPage from './pages/auth/LoginPage';
 import DashboardPage from './pages/dashboard/DashboardPage';
 import UserManagementPage from './pages/auth/UserManagementPage';
+import PermissionManagementPage from './pages/auth/PermissionManagementPage';
 import ProductListPage from './pages/products/ProductListPage';
 import ProductDetailPage from './pages/products/ProductDetailPage';
 import ProductFormPage from './pages/products/ProductFormPage';
@@ -41,6 +42,7 @@ export default function App() {
           <Route path="/quotes/:id" element={<QuoteDetailPage />} />
           <Route path="/quotes/:id/edit" element={<QuoteFormPage />} />
           <Route path="/users" element={<UserManagementPage />} />
+          <Route path="/permissions" element={<PermissionManagementPage />} />
           <Route path="/shares" element={<ShareManagementPage />} />
         </Route>
       </Routes>

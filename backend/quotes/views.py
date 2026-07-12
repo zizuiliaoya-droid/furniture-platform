@@ -26,7 +26,7 @@ class QuoteViewSet(ModelViewSet):
         user = self.request.user
         qs = Quote.objects.select_related('created_by').prefetch_related('items')
         # QT-7/8 可见性：管理员看全部；普通员工看自己创建的 + 被分享的
-        if getattr(user, 'role', 'STAFF') != 'ADMIN':
+        if not getattr(user, 'is_admin', False):
             qs = qs.filter(_Q(created_by=user) | _Q(shares__shared_with=user)).distinct()
         search = self.request.query_params.get('search')
         if search:
@@ -59,7 +59,7 @@ class QuoteViewSet(ModelViewSet):
 
     def _assert_owner_or_admin(self, quote):
         user = self.request.user
-        if getattr(user, 'role', 'STAFF') == 'ADMIN' or quote.created_by_id == user.id:
+        if getattr(user, 'is_admin', False) or quote.created_by_id == user.id:
             return
         from rest_framework.exceptions import PermissionDenied
         raise PermissionDenied('该报价单为只读（他人分享）')
@@ -162,7 +162,7 @@ class QuoteItemViewSet(ModelViewSet):
 
     def _check_write(self, quote):
         user = self.request.user
-        if getattr(user, 'role', 'STAFF') == 'ADMIN' or quote.created_by_id == user.id:
+        if getattr(user, 'is_admin', False) or quote.created_by_id == user.id:
             return
         from rest_framework.exceptions import PermissionDenied
         raise PermissionDenied('该报价单为只读（他人分享）')

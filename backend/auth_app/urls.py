@@ -11,6 +11,8 @@ urlpatterns = [
     path('login/', views.login_view, name='login'),
     path('logout/', views.logout_view, name='logout'),
     path('me/', views.me_view, name='me'),
+    path('permissions/', views.permission_matrix_view, name='permission-matrix'),
+    path('my-permissions/', views.my_permissions_view, name='my-permissions'),
     path('users/<int:pk>/toggle-status/', views.toggle_user_status, name='toggle-user-status'),
     path('users/<int:pk>/reset-password/', views.reset_user_password, name='reset-user-password'),
 ] + router.urls

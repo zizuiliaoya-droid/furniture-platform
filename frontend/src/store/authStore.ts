@@ -5,7 +5,7 @@ interface User {
   id: number;
   username: string;
   display_name: string;
-  role: 'ADMIN' | 'STAFF';
+  role: 'SUPER_ADMIN' | 'ADMIN' | 'DEPT_MANAGER' | 'STAFF';
   is_active: boolean;
 }
 

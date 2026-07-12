@@ -2,7 +2,7 @@ import { Menu } from 'antd';
 import {
   BookOutlined, FileTextOutlined,
   HomeOutlined, PictureOutlined, ShareAltOutlined,
-  ShoppingOutlined, TeamOutlined, DollarOutlined,
+  ShoppingOutlined, TeamOutlined, DollarOutlined, SafetyOutlined,
 } from '@ant-design/icons';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
@@ -11,7 +11,7 @@ export default function Sidebar() {
   const navigate = useNavigate();
   const location = useLocation();
   const user = useAuthStore((s) => s.user);
-  const isAdmin = user?.role === 'ADMIN';
+  const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN';
 
   const items = [
     { key: '/', icon: <HomeOutlined />, label: '首页' },
@@ -29,6 +29,7 @@ export default function Sidebar() {
     { key: '/quotes', icon: <DollarOutlined />, label: '报价方案' },
     { key: '/shares', icon: <ShareAltOutlined />, label: '分享管理' },
     ...(isAdmin ? [{ key: '/users', icon: <TeamOutlined />, label: '用户管理' }] : []),
+    ...(isAdmin ? [{ key: '/permissions', icon: <SafetyOutlined />, label: '权限管理' }] : []),
   ];
 
   return (

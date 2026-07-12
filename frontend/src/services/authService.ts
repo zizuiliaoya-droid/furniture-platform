@@ -11,4 +11,8 @@ export const authService = {
   toggleUserStatus: (id: number) => api.post(`/api/auth/users/${id}/toggle-status/`),
   resetPassword: (id: number, newPassword: string) =>
     api.post(`/api/auth/users/${id}/reset-password/`, { new_password: newPassword }),
+  // AUTH-3 权限矩阵
+  getPermissionMatrix: () => api.get('/api/auth/permissions/'),
+  updatePermissionMatrix: (items: any[]) => api.put('/api/auth/permissions/', { items }),
+  getMyPermissions: () => api.get('/api/auth/my-permissions/'),
 };

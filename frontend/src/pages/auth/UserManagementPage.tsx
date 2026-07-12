@@ -43,7 +43,7 @@ export default function UserManagementPage() {
       <Table dataSource={users} rowKey="id" loading={loading} columns={[
         { title: '用户名', dataIndex: 'username' },
         { title: '显示名称', dataIndex: 'display_name' },
-        { title: '角色', dataIndex: 'role', render: (v: string) => v === 'ADMIN' ? '管理员' : '员工' },
+        { title: '角色', dataIndex: 'role', render: (v: string) => ({ SUPER_ADMIN: '超级管理员', ADMIN: '管理员', DEPT_MANAGER: '部门主管', STAFF: '员工' }[v] || v) },
         { title: '状态', dataIndex: 'is_active', render: (v: boolean, r: any) => <Switch checked={v} onChange={() => handleToggle(r.id)} /> },
       ]} />
       <Modal title="创建用户" open={modalOpen} onCancel={() => setModalOpen(false)} onOk={() => form.submit()}>
@@ -52,7 +52,12 @@ export default function UserManagementPage() {
           <Form.Item name="password" label="密码" rules={[{ required: true, min: 6 }]}><Input.Password /></Form.Item>
           <Form.Item name="display_name" label="显示名称" rules={[{ required: true }]}><Input /></Form.Item>
           <Form.Item name="role" label="角色" initialValue="STAFF">
-            <Select options={[{ value: 'ADMIN', label: '管理员' }, { value: 'STAFF', label: '员工' }]} />
+            <Select options={[
+              { value: 'SUPER_ADMIN', label: '超级管理员' },
+              { value: 'ADMIN', label: '管理员' },
+              { value: 'DEPT_MANAGER', label: '部门主管' },
+              { value: 'STAFF', label: '员工' },
+            ]} />
           </Form.Item>
         </Form>
       </Modal>

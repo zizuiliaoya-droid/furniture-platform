@@ -5,13 +5,13 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
-from .models import User
+from .models import RolePermission, User
 from .permissions import IsAdminRole
 from .serializers import (
     LoginSerializer, ResetPasswordSerializer,
     UserCreateSerializer, UserSerializer,
 )
-from .services import AuthService
+from .services import AuthService, PermissionMatrixService
 
 
 @api_view(['POST'])
@@ -39,7 +39,31 @@ def logout_view(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def me_view(request):
-    return Response(UserSerializer(request.user).data)
+    data = UserSerializer(request.user).data
+    data['permissions'] = PermissionMatrixService.effective_for(request.user)
+    return Response(data)
+
+
+@api_view(['GET', 'PUT'])
+@permission_classes([IsAuthenticated, IsAdminRole])
+def permission_matrix_view(request):
+    """AUTH-3 角色权限矩阵：GET 读取完整矩阵；PUT 批量更新。"""
+    if request.method == 'GET':
+        return Response(PermissionMatrixService.get_matrix())
+    items = request.data.get('items', [])
+    PermissionMatrixService.update_matrix(items)
+    return Response(PermissionMatrixService.get_matrix())
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def my_permissions_view(request):
+    """当前用户的有效权限（前端菜单/按钮控制用）。"""
+    return Response({
+        'role': request.user.role,
+        'is_admin': request.user.is_admin,
+        'permissions': PermissionMatrixService.effective_for(request.user),
+    })
 
 
 class UserViewSet(ModelViewSet):

@@ -48,7 +48,7 @@ class ProductViewSet(ModelViewSet):
         qs = Product.objects.select_related('brand', 'created_by').prefetch_related(
             'images', 'configs', 'config_dimensions'
         )
-        if self.request.user.role != 'ADMIN':
+        if not getattr(self.request.user, 'is_admin', False):
             qs = qs.filter(is_active=True)
 
         # 搜索
@@ -84,7 +84,7 @@ class ProductViewSet(ModelViewSet):
         if max_price:
             qs = qs.filter(min_price__lte=max_price)
         is_active = self.request.query_params.get('is_active')
-        if is_active is not None and self.request.user.role == 'ADMIN':
+        if is_active is not None and getattr(self.request.user, 'is_admin', False):
             qs = qs.filter(is_active=is_active.lower() == 'true')
 
         # 旧分类兼容
