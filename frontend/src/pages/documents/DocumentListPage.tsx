@@ -10,7 +10,7 @@ import { documentService } from '../../services/documentService';
 import { useAuthStore } from '../../store/authStore';
 import MediaPreview from '../../components/MediaPreview';
 
-const { Title } = Typography;
+const { Title, Text } = Typography;
 const { TextArea } = Input;
 const DOC_TYPE_MAP: Record<string, string> = { design: 'DESIGN', training: 'TRAINING', certificates: 'CERTIFICATE' };
 const DOC_TYPE_LABEL: Record<string, string> = { DESIGN: '设计资源', TRAINING: '培训资料', CERTIFICATE: '资质文件' };
@@ -70,6 +70,35 @@ export default function DocumentListPage() {
     }
   };
 
+  const [folderModalOpen, setFolderModalOpen] = useState(false);
+  const [folderName, setFolderName] = useState('');
+  const reloadFolders = () => documentService.getFolderTree(apiDocType).then(({ data }) => setFolders(data));
+
+  const handleCreateFolder = async () => {
+    if (!folderName.trim()) { message.error('请输入文件夹名称'); return; }
+    try {
+      await documentService.createFolder({ name: folderName.trim(), doc_type: apiDocType, parent: selectedFolder });
+      message.success('文件夹已创建');
+      setFolderModalOpen(false);
+      setFolderName('');
+      reloadFolders();
+    } catch (err: any) {
+      message.error(err.response?.data?.detail || '创建失败');
+    }
+  };
+
+  const handleDeleteFolder = async () => {
+    if (!selectedFolder) return;
+    try {
+      await documentService.deleteFolder(selectedFolder);
+      message.success('文件夹已删除');
+      setSelectedFolder(null);
+      reloadFolders();
+    } catch (err: any) {
+      message.error(err.response?.data?.detail || '删除失败（可能含文件或子文件夹）');
+    }
+  };
+
   const openRichTextEditor = (doc?: any) => {
     setEditingRichText(doc || null);
     richTextForm.setFieldsValue({
@@ -121,9 +150,34 @@ export default function DocumentListPage() {
 
   return (
     <div style={{ display: 'flex', gap: 16 }}>
-      <Card title="文件夹" style={{ width: 240, flexShrink: 0 }} size="small">
-        <Tree treeData={toTreeData(folders)} onSelect={(keys) => setSelectedFolder(keys[0] as number || null)} />
+      <Card title="文件夹" style={{ width: 240, flexShrink: 0 }} size="small"
+        extra={isAdmin && (
+          <Space size={4}>
+            <Button size="small" type="link" onClick={() => setFolderModalOpen(true)}>新建</Button>
+            {selectedFolder && (
+              <Popconfirm title="删除该文件夹？" okText="删除" cancelText="取消"
+                okButtonProps={{ danger: true }} onConfirm={handleDeleteFolder}>
+                <Button size="small" type="link" danger>删除</Button>
+              </Popconfirm>
+            )}
+          </Space>
+        )}
+      >
+        <Tree treeData={toTreeData(folders)}
+          selectedKeys={selectedFolder ? [selectedFolder] : []}
+          onSelect={(keys) => setSelectedFolder(keys[0] as number || null)} />
       </Card>
+
+      <Modal
+        title="新建文件夹"
+        open={folderModalOpen}
+        onCancel={() => { setFolderModalOpen(false); setFolderName(''); }}
+        onOk={handleCreateFolder}
+        okText="创建"
+      >
+        <Input placeholder="文件夹名称" value={folderName} onChange={(e) => setFolderName(e.target.value)} />
+        {selectedFolder && <Text type="secondary">将创建在当前选中文件夹下</Text>}
+      </Modal>
       <div style={{ flex: 1 }}>
         <Space style={{ marginBottom: 16, justifyContent: 'space-between', width: '100%' }}>
           <Title level={4} style={{ margin: 0 }}>{DOC_TYPE_LABEL[apiDocType]}</Title>
