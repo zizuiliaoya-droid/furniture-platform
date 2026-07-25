@@ -8,6 +8,7 @@ from rest_framework.generics import ListAPIView
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from auth_app.permissions import HasModulePermission
 from common.pagination import StandardPagination
 from products.models import Brand, Product, ProductConfigDimension
 from products.serializers import ProductListSerializer
@@ -16,7 +17,8 @@ from products.serializers import ProductListSerializer
 class CatalogBrowseView(ListAPIView):
     """图册浏览 — 多维筛选 + 多选 + MECE 区间"""
     serializer_class = ProductListSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasModulePermission]
+    module_name = 'CATALOG'
     pagination_class = StandardPagination
 
     DYNAMIC_PREFIX = 'attr_'
@@ -115,7 +117,8 @@ class CatalogBrowseView(ListAPIView):
 class CatalogSearchView(ListAPIView):
     """图册关键词搜索（全字段）"""
     serializer_class = ProductListSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasModulePermission]
+    module_name = 'CATALOG'
     pagination_class = StandardPagination
 
     def get_queryset(self):
@@ -133,7 +136,8 @@ class CatalogSearchView(ListAPIView):
 
 class CatalogFiltersView(APIView):
     """图册筛选项聚合接口"""
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasModulePermission]
+    module_name = 'CATALOG'
 
     def get(self, request):
         active_products = Product.objects.filter(is_active=True)

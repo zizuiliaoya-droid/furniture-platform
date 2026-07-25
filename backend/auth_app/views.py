@@ -5,10 +5,10 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
-from .models import RolePermission, User
+from .models import Department, RolePermission, User
 from .permissions import IsAdminRole
 from .serializers import (
-    LoginSerializer, ResetPasswordSerializer,
+    DepartmentSerializer, LoginSerializer, ResetPasswordSerializer,
     UserCreateSerializer, UserSerializer,
 )
 from .services import AuthService, PermissionMatrixService
@@ -66,6 +66,12 @@ def my_permissions_view(request):
     })
 
 
+class DepartmentViewSet(ModelViewSet):
+    queryset = Department.objects.all().order_by('sort_order', 'id')
+    serializer_class = DepartmentSerializer
+    permission_classes = [IsAuthenticated, IsAdminRole]
+
+
 class UserViewSet(ModelViewSet):
     queryset = User.objects.all().order_by('-date_joined')
     permission_classes = [IsAuthenticated, IsAdminRole]
@@ -83,19 +89,30 @@ class UserViewSet(ModelViewSet):
 @permission_classes([IsAuthenticated, IsAdminRole])
 def toggle_user_status(request, pk):
     try:
-        user = AuthService.toggle_status(pk)
+        target = User.objects.get(pk=pk)
     except User.DoesNotExist:
         return Response({'detail': '用户不存在'}, status=status.HTTP_404_NOT_FOUND)
+    if target.role == 'SUPER_ADMIN' and request.user.role != 'SUPER_ADMIN':
+        return Response({'detail': '只有超级管理员可以修改超级管理员账号'}, status=status.HTTP_403_FORBIDDEN)
+    if target.pk == request.user.pk and target.is_active:
+        return Response({'detail': '不能停用自己的账号'}, status=status.HTTP_400_BAD_REQUEST)
+    if target.role == 'SUPER_ADMIN' and target.is_active and not User.objects.filter(
+            role='SUPER_ADMIN', is_active=True).exclude(pk=target.pk).exists():
+        return Response({'detail': '系统必须至少保留一个启用的超级管理员'}, status=status.HTTP_400_BAD_REQUEST)
+    user = AuthService.toggle_status(pk)
     return Response(UserSerializer(user).data)
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated, IsAdminRole])
 def reset_user_password(request, pk):
-    serializer = ResetPasswordSerializer(data=request.data)
-    serializer.is_valid(raise_exception=True)
     try:
-        AuthService.reset_password(pk, serializer.validated_data['new_password'])
+        target = User.objects.get(pk=pk)
     except User.DoesNotExist:
         return Response({'detail': '用户不存在'}, status=status.HTTP_404_NOT_FOUND)
+    if target.role == 'SUPER_ADMIN' and request.user.role != 'SUPER_ADMIN':
+        return Response({'detail': '只有超级管理员可以重置超级管理员密码'}, status=status.HTTP_403_FORBIDDEN)
+    serializer = ResetPasswordSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    AuthService.reset_password(pk, serializer.validated_data['new_password'])
     return Response({'detail': '密码重置成功'})

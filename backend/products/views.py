@@ -1,4 +1,7 @@
 """Product management views."""
+import json
+
+import openpyxl
 from django.db.models import Q
 from django.http import HttpResponse
 from rest_framework import status
@@ -7,7 +10,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
-from auth_app.permissions import IsAdminRole
+from auth_app.permissions import HasModulePermission, IsAdminRole, require_module_permission
 from .models import (
     Brand, Category, Product, ProductConfig, ProductConfigDimension,
     ProductDocument, ProductImage,
@@ -16,14 +19,16 @@ from .serializers import (
     BrandSerializer, CalculatePriceSerializer,
     CategorySerializer, CategoryTreeSerializer,
     ProductConfigDimensionSerializer, ProductConfigDimensionWriteSerializer,
+    ProductCompositeCreateSerializer,
     ProductConfigSerializer, ProductCreateUpdateSerializer,
     ProductDetailSerializer, ProductDocumentCreateSerializer,
     ProductDocumentSerializer, ProductImageSerializer, ProductListSerializer,
 )
 from .services import (
     CategoryOptionsService, CategoryService, ConfigExcelService,
-    ConfigExportService, BatchProductImportService,
-    PriceCalculationService, ProductImageService, ProductImportService,
+    ConfigExportService, BatchProductImportService, CustomerWorkbookImportService,
+    PriceCalculationService, ProductCompositeService,
+    ProductImageService, ProductImportService,
 )
 
 
@@ -32,17 +37,34 @@ from .services import (
 class BrandViewSet(ModelViewSet):
     queryset = Brand.objects.all()
     serializer_class = BrandSerializer
-
-    def get_permissions(self):
-        if self.action in ('create', 'update', 'partial_update', 'destroy'):
-            return [IsAuthenticated(), IsAdminRole()]
-        return [IsAuthenticated()]
+    permission_classes = [IsAuthenticated, HasModulePermission]
+    module_name = 'PRODUCT'
 
 
 # ─── Product ViewSet ──────────────────────────────────────────────────────────
 
 class ProductViewSet(ModelViewSet):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasModulePermission]
+    module_name = 'PRODUCT'
+    permission_action_map = {
+        'reactivate': 'update',
+        'upload_images': 'update',
+        'update_image_order': 'update',
+        'import_products': 'create',
+        'download_import_template': 'export',
+        'config_dimensions': 'view',
+        'add_config_dimension': 'update',
+        'calculate_price': 'view',
+        'upload_config_excel': 'update',
+        'download_config_template': 'export',
+        'product_documents': {'GET': 'view', 'POST': 'update'},
+        'remove_product_document': 'update',
+        'create_composite': 'create',
+        'category_options': 'view',
+        'batch_import': 'create',
+        'download_batch_template': 'export',
+        'export_config': 'export',
+    }
 
     def get_queryset(self):
         qs = Product.objects.select_related('brand', 'created_by').prefetch_related(
@@ -105,9 +127,8 @@ class ProductViewSet(ModelViewSet):
         return ProductDetailSerializer
 
     def get_permissions(self):
-        if self.action in ('create', 'update', 'partial_update', 'destroy'):
-            return [IsAuthenticated(), IsAdminRole()]
-        return [IsAuthenticated()]
+        # 始终使用模块权限矩阵；action 装饰器中的历史管理员覆盖不再绕过矩阵。
+        return [IsAuthenticated(), HasModulePermission()]
 
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
@@ -252,9 +273,7 @@ class ProductViewSet(ModelViewSet):
                 qs = qs.filter(relation_type=relation_type)
             return Response(ProductDocumentSerializer(qs, many=True).data)
         else:
-            # POST - 关联文档
-            if not IsAdminRole().has_permission(request, self):
-                return Response({'detail': '权限不足'}, status=status.HTTP_403_FORBIDDEN)
+            # POST - 关联文档；写权限已由 HasModulePermission 在入口校验。
             serializer = ProductDocumentCreateSerializer(data=request.data)
             serializer.is_valid(raise_exception=True)
             from documents.models import Document
@@ -277,6 +296,24 @@ class ProductViewSet(ModelViewSet):
         ProductDocument.objects.filter(product=product, document_id=doc_id).delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
+    # ─── 事务化产品组合创建 ──────────────────────────────────────────────────
+
+    @action(detail=False, methods=['post'], url_path='create-composite')
+    def create_composite(self, request):
+        try:
+            raw = request.data.get('payload', '{}')
+            payload = json.loads(raw) if isinstance(raw, str) else raw
+        except (TypeError, json.JSONDecodeError):
+            return Response({'detail': 'payload 必须是有效 JSON'}, status=status.HTTP_400_BAD_REQUEST)
+        serializer = ProductCompositeCreateSerializer(data=payload)
+        serializer.is_valid(raise_exception=True)
+        try:
+            product = ProductCompositeService.create(
+                serializer.validated_data, request.user, request.FILES.getlist('images'))
+        except ValueError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(ProductDetailSerializer(product).data, status=status.HTTP_201_CREATED)
+
     # ─── 类别选项 ─────────────────────────────────────────────────────────────
 
     @action(detail=False, methods=['get'], url_path='category-options')
@@ -285,27 +322,41 @@ class ProductViewSet(ModelViewSet):
 
     # ─── 批量产品导入（长格式，多产品） ───────────────────────────────────────
 
-    @action(detail=False, methods=['post'], url_path='batch-import',
-            permission_classes=[IsAuthenticated, IsAdminRole])
+    @action(detail=False, methods=['post'], url_path='batch-import')
     def batch_import(self, request):
         file = request.FILES.get('file')
         if not file or not file.name.endswith('.xlsx'):
             return Response({'detail': '请上传 .xlsx 格式文件'}, status=status.HTTP_400_BAD_REQUEST)
-        parsed = BatchProductImportService.parse(file)
+        # 自动识别：现有“两 Sheet 长格式”或客户“每产品一 Sheet 横向格式”。
+        workbook = openpyxl.load_workbook(file, read_only=True, data_only=True)
+        is_long_format = {
+            BatchProductImportService.PRODUCT_SHEET,
+            BatchProductImportService.CONFIG_SHEET,
+        }.issubset(set(workbook.sheetnames))
+        workbook.close()
+        file.seek(0)
+        service = BatchProductImportService if is_long_format else CustomerWorkbookImportService
+        parsed = service.parse(file)
         if request.query_params.get('confirm') == 'true':
             if parsed['errors']:
-                return Response({'detail': '存在错误，无法导入', 'errors': parsed['errors']},
+                return Response({'detail': '存在错误，无法导入', 'errors': parsed['errors'],
+                                 'warnings': parsed.get('warnings', [])},
                                 status=status.HTTP_400_BAD_REQUEST)
-            result = BatchProductImportService.execute_import(parsed, request.user)
+            try:
+                result = service.execute_import(parsed, request.user)
+            except ValueError as exc:
+                return Response({'detail': str(exc), 'warnings': parsed.get('warnings', [])},
+                                status=status.HTTP_400_BAD_REQUEST)
             return Response({'detail': '导入成功', **result})
         return Response(parsed['summary'])
 
-    @action(detail=False, methods=['get'], url_path='batch-template',
-            permission_classes=[IsAuthenticated, IsAdminRole])
+    @action(detail=False, methods=['get'], url_path='batch-template')
     def download_batch_template(self, request):
-        content = BatchProductImportService.generate_template()
+        customer_format = request.query_params.get('fmt', request.query_params.get('format', 'customer')) != 'legacy'
+        content = (CustomerWorkbookImportService.generate_template()
+                   if customer_format else BatchProductImportService.generate_template())
         resp = HttpResponse(content, content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-        resp['Content-Disposition'] = 'attachment; filename="product_batch_template.xlsx"'
+        resp['Content-Disposition'] = 'attachment; filename="product_customer_template.xlsx"'
         return resp
 
     @action(detail=True, methods=['get'], url_path='export-config',
@@ -321,7 +372,8 @@ class ProductViewSet(ModelViewSet):
 # ─── 独立视图函数 ─────────────────────────────────────────────────────────────
 
 @api_view(['DELETE'])
-@permission_classes([IsAuthenticated, IsAdminRole])
+@permission_classes([IsAuthenticated])
+@require_module_permission('PRODUCT', 'update')
 def delete_product_image(request, pk):
     try:
         image = ProductImage.objects.get(pk=pk)
@@ -332,7 +384,8 @@ def delete_product_image(request, pk):
 
 
 @api_view(['PUT'])
-@permission_classes([IsAuthenticated, IsAdminRole])
+@permission_classes([IsAuthenticated])
+@require_module_permission('PRODUCT', 'update')
 def set_cover_image(request, pk):
     try:
         image = ProductImage.objects.select_related('product').get(pk=pk)
@@ -346,14 +399,11 @@ def set_cover_image(request, pk):
 
 class ProductConfigViewSet(ModelViewSet):
     serializer_class = ProductConfigSerializer
+    permission_classes = [IsAuthenticated, HasModulePermission]
+    module_name = 'PRODUCT'
 
     def get_queryset(self):
         return ProductConfig.objects.filter(product_id=self.kwargs.get('product_pk'))
-
-    def get_permissions(self):
-        if self.action in ('create', 'update', 'partial_update', 'destroy'):
-            return [IsAuthenticated(), IsAdminRole()]
-        return [IsAuthenticated()]
 
     def perform_create(self, serializer):
         serializer.save(product_id=self.kwargs['product_pk'])
@@ -364,11 +414,8 @@ class ProductConfigViewSet(ModelViewSet):
 class CategoryViewSet(ModelViewSet):
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
-
-    def get_permissions(self):
-        if self.action in ('create', 'update', 'partial_update', 'destroy'):
-            return [IsAuthenticated(), IsAdminRole()]
-        return [IsAuthenticated()]
+    permission_classes = [IsAuthenticated, HasModulePermission]
+    module_name = 'PRODUCT'
 
     def get_queryset(self):
         qs = Category.objects.all().order_by('sort_order', 'id')

@@ -463,3 +463,50 @@
 - **测试**：新增 `quotes/tests/test_quote_item_update.py`（PATCH 数量/折扣、仅数量、删除重算）3 例，本地 24/24 通过。前端 `npm run build` 通过。
 - **部署**：提交 `8b5dfdd` 推送 GitHub；经 Zeabur MCP 重新部署后端 + 前端（均 RUNNING）。线上验收：`PATCH /api/quotes/items/1/`→HTTP 200 且 subtotal 重算正确；前端 200、API 代理 200。
 **Context**: OPERATIONS - Bug Fixes Round 2 - Deployed & Verified
+## 客户配置模板与体验链路加固 - 方案审批
+**Timestamp**: 2026-07-24T00:00:00Z
+**User Input**: "批准执行，执行过程尽量不要来问我，最后做完我来验收"
+**AI Response**: 用户批准横向 Excel 模板适配、组合定价、原子产品创建、报价链路、图片、用户与权限加固方案；进入连续实施和最终统一验收准备，不在中途请求确认。
+**Context**: CONSTRUCTION - Customer Template & UX Hardening - Plan Approved
+
+---
+
+## 客户配置模板与体验链路加固 - 连续执行
+**Timestamp**: 2026-07-24T13:03:26Z
+**User Input**: "继续"
+**AI Response**: 继续执行已批准计划；完成前端复合创建、报价明细原位更新、分享候选、用户编辑和权限矩阵体验，并补充后端对象权限与定向回归测试。
+**Context**: CONSTRUCTION - Customer Template & UX Hardening - Implementation
+
+---
+
+## 客户配置模板与体验链路加固 - 验证与收尾
+**Timestamp**: 2026-07-24T14:57:35Z
+**User Input**: "继续"
+**AI Response**: 执行全量测试、前端构建、迁移检查、客户原始四 Sheet 解析回归，并更新执行计划、软件修改记录和 AI-DLC 状态；未创建提交、未推送、未部署。
+**Context**: CONSTRUCTION - Build and Test - Final Verification
+
+---
+
+## 客户配置模板与体验链路加固 - 完成
+**Timestamp**: 2026-07-24T15:09:54Z
+**User Input**: N/A（已批准计划的连续执行）
+**AI Response**: 全部计划项完成。SQLite 全量 pytest 49 passed；`makemigrations --check --dry-run` 无模型变化；客户原始 4 Sheet Excel 解析通过；前端 TypeScript/Vite 构建通过；`git diff --check` 通过。已更新计划、软件修改记录和 aidlc-state；未 commit、未 push、未部署。
+**Context**: CONSTRUCTION - Customer Template & UX Hardening - Code Generation and Build & Test Complete
+
+---
+
+## 发布前审计整改 - 方案批准
+**Timestamp**: 2026-07-25T02:31:21Z
+**User Input**: "按照你推荐的执行"
+**AI Response**: 按推荐方案 B 执行：修复发布前审计问题 1-11，补齐图册、案例、文档模块权限硬校验和回归测试；组织架构完整树继续延期。实施与验证完成前不 commit、不 push。
+**Context**: CONSTRUCTION - Pre-release Remediation - Plan Approved
+
+---
+
+## 发布前审计整改 - 完成验证并获推送授权
+**Timestamp**: 2026-07-25T03:28:49Z
+**User Input**: "都修改完了吗，如果修改完了先推送到GitHub上，我来验收"
+**AI Response**: 完成方案 B 全部代码整改及回归测试。SQLite pytest 62 passed；迁移检查 No changes detected；前端生产构建通过；客户真实 4 Sheet Excel 解析 4 个产品、0 error；git diff --check 通过。用户明确授权创建新提交并推送 origin/main，以触发 Zeabur 自动部署。
+**Context**: CONSTRUCTION - Pre-release Remediation - Validated; OPERATIONS - Push Authorized
+
+---

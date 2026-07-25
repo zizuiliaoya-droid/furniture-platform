@@ -27,10 +27,9 @@ class TestBatchImport:
         assert dims.count() == 2
         keys = set(dims.values_list('dimension_key', flat=True))
         assert '桌板材质' in keys and '产品规格' in keys
-        # 配置款式 → 预设，默认标记
+        # 旧“配置款式”不包含完整 selections，不再生成空默认预设。
         presets = ProductConfigPreset.objects.filter(product=p)
-        assert presets.count() == 1
-        assert presets.first().is_default is True
+        assert presets.count() == 0
 
     def test_idempotent_update(self, admin_user):
         template = BatchProductImportService.generate_template()

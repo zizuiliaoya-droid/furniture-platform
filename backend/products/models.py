@@ -228,9 +228,19 @@ class ProductPriceMatrix(models.Model):
         ]
 
     @staticmethod
+    def normalize_selections(selections: dict) -> dict:
+        """统一导入、算价和报价使用的配置格式，忽略空值并把键值稳定转为字符串。"""
+        return {
+            str(key).strip(): str(value).strip()
+            for key, value in (selections or {}).items()
+            if str(key).strip() and value not in (None, '') and str(value).strip()
+        }
+
+    @staticmethod
     def build_signature(selections: dict) -> str:
-        """按 key 排序后生成稳定哈希"""
-        sorted_items = sorted(selections.items())
+        """按 key 排序后生成稳定哈希。"""
+        normalized = ProductPriceMatrix.normalize_selections(selections)
+        sorted_items = sorted(normalized.items())
         raw = json.dumps(sorted_items, ensure_ascii=False, separators=(',', ':'))
         return hashlib.md5(raw.encode()).hexdigest()
 

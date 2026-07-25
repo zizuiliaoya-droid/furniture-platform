@@ -7,6 +7,7 @@ from io import BytesIO
 import openpyxl
 from django.conf import settings
 from django.db import transaction
+from django.utils.text import slugify
 
 from common.file_storage import FileStorageService
 from .models import (
@@ -32,19 +33,28 @@ class ProductImageService:
     @staticmethod
     def upload_images(product: Product, files: list) -> list:
         created = []
-        for f in files:
-            if f.size > settings.MAX_IMAGE_SIZE:
-                continue
-            path = FileStorageService.upload(f, 'products')
-            thumbs = FileStorageService.generate_thumbnails(path)
-            img = ProductImage.objects.create(
-                product=product,
-                image_path=path,
-                thumbnail_path=thumbs,
-                sort_order=product.images.count(),
-            )
-            created.append(img)
-        return created
+        uploaded_paths = []
+        try:
+            for f in files:
+                if f.size > settings.MAX_IMAGE_SIZE:
+                    raise ValueError(f'图片 {f.name} 超过大小限制')
+                path = FileStorageService.upload(f, 'products')
+                uploaded_paths.append(path)
+                thumbs = FileStorageService.generate_thumbnails(path)
+                img = ProductImage.objects.create(
+                    product=product,
+                    image_path=path,
+                    thumbnail_path=thumbs,
+                    sort_order=product.images.count(),
+                    is_cover=not product.images.exists(),
+                )
+                created.append(img)
+            return created
+        except Exception:
+            # 数据库事务回滚不会清除已经写入磁盘的文件，必须主动补偿。
+            for path in uploaded_paths:
+                FileStorageService.delete_with_thumbnails(path)
+            raise
 
     @staticmethod
     def delete_image(image: ProductImage):
@@ -142,24 +152,43 @@ class PriceCalculationService:
         return [k for k in keys if k]
 
     @staticmethod
+    def _is_visible(dim: 'ProductConfigDimension', selections: dict) -> bool:
+        parent = (dim.parent_dimension or '').strip()
+        if not parent:
+            return True
+        parent_parts = parent.split('=', 1)
+        parent_key = parent_parts[0].strip()
+        parent_value = selections.get(parent_key)
+        if parent_value in (None, ''):
+            return False
+        if len(parent_parts) == 2 and str(parent_value) != parent_parts[1].strip():
+            return False
+        return True
+
+    @staticmethod
     def calculate(product: Product, selections: dict) -> dict:
-        """
-        入参: product, selections = {dimension_key: option_key, ...}
-        返回: {
-            valid: bool,
-            price: Decimal|None,
-            breakdown: dict,
-            missing_dimensions: list,
-            invalid_selections: list,  # 选项归属/级联非法
-            reason: str,
-        }
-        """
+        """校验当前可见配置并按 Matrix 或 Rule 计算价格。"""
+        selections = ProductPriceMatrix.normalize_selections(selections)
         all_dims = list(ProductConfigDimension.objects.filter(product=product))
         dim_by_key = {d.dimension_key: d for d in all_dims}
 
-        # 1. 校验必填维度齐全
+        # 无配置维度的固定价产品也能进入报价单。
+        if not all_dims:
+            fixed_price = product.base_price if product.base_price is not None else product.min_price
+            if fixed_price is None:
+                return {
+                    'valid': False, 'price': None, 'missing_dimensions': [],
+                    'invalid_selections': [], 'breakdown': {}, 'reason': '产品尚未配置价格',
+                }
+            return {
+                'valid': True, 'price': fixed_price, 'missing_dimensions': [],
+                'invalid_selections': [], 'breakdown': {}, 'reason': '',
+            }
+
+        # 只校验当前父条件下可见的必填维度；不可见子维度不应误报缺失。
+        visible_dims = [d for d in all_dims if PriceCalculationService._is_visible(d, selections)]
         missing = [
-            d.dimension_key for d in all_dims
+            d.dimension_key for d in visible_dims
             if d.is_required and d.dimension_key not in selections
         ]
         if missing:
@@ -691,20 +720,34 @@ class BatchProductImportService:
                             'key': opt_key, 'label': opt_label, 'price': price, 'is_default': is_default,
                         })
 
+        warnings = []
+        if any(
+            option.get('price') is not None
+            for product in products.values()
+            for options in product['dimensions'].values()
+            for option in options
+        ):
+            warnings.append('旧版长格式的“价格”是单行值，无法代表完整组合最终价，预览时将忽略')
+        if any(product['presets'] for product in products.values()):
+            warnings.append('旧版“配置款式”未包含完整 selections，不会直接生成默认预设')
         summary = {
+            'format': 'legacy',
             'product_count': len(products),
             'products': [
                 {
                     'name': p['name'], 'code': p['code'],
                     'dimension_count': len(p['dimensions']),
                     'option_count': sum(len(v) for v in p['dimensions'].values()),
-                    'preset_count': len(p['presets']),
+                    'preset_count': 0,
+                    'price_count': 0,
                 }
                 for p in products.values()
             ],
             'errors': errors,
+            'warnings': warnings,
         }
-        return {'products': products, 'summary': summary, 'errors': errors}
+        return {'format': 'legacy', 'products': products, 'summary': summary,
+                'errors': errors, 'warnings': warnings}
 
     @classmethod
     @transaction.atomic
@@ -738,29 +781,37 @@ class BatchProductImportService:
                 product = Product.objects.create(created_by=user, **fields)
                 created += 1
 
-            # 重建维度 / 价格 / 预设
+            # 重建配置；旧长格式仅作为配置选项兼容导入，不再把“行价格”误当最终组合价。
             ProductConfigDimension.objects.filter(product=product).delete()
+            ProductPriceMatrix.objects.filter(product=product).delete()
             ProductPriceRule.objects.filter(product=product).delete()
             ProductConfigPreset.objects.filter(product=product).delete()
 
+            complete_default = {}
             for order, (big, opts) in enumerate(meta['dimensions'].items()):
                 ProductConfigDimension.objects.create(
                     product=product, dimension_key=big, dimension_label=big,
                     options=[{'key': o['key'], 'label': o['label']} for o in opts],
                     is_required=True, sort_order=order,
                 )
-                for o in opts:
-                    if o['price'] is not None:
-                        ProductPriceRule.objects.create(
-                            product=product, dimension_key=big, option_key=o['key'],
-                            price_delta=o['price'],
-                        )
-            for order, preset in enumerate(meta['presets']):
+                defaults = [option for option in opts if option['is_default']]
+                if len(defaults) == 1:
+                    complete_default[big] = defaults[0]['key']
+            # 只有每个必填维度都明确给出一个默认项时，才生成真实完整默认预设。
+            if meta['dimensions'] and len(complete_default) == len(meta['dimensions']):
                 ProductConfigPreset.objects.create(
-                    product=product, code=preset['code'], label=preset['label'],
-                    selections={}, is_default=preset['is_default'], sort_order=order,
+                    product=product, code='LEGACY-DEFAULT', label='默认配置',
+                    selections=ProductPriceMatrix.normalize_selections(complete_default),
+                    is_default=True, sort_order=0,
                 )
-        return {'created': created, 'updated': updated}
+            product.pricing_mode = 'MATRIX'
+            product.min_price = None
+            product.save(update_fields=['pricing_mode', 'min_price'])
+        return {
+            'created': created,
+            'updated': updated,
+            'warnings': ['旧版长格式仅导入配置选项；行价格和不完整款式不会写入最终组合价格或默认预设'],
+        }
 
 
 # ─── 产品配置导出 ─────────────────────────────────────────────────────────────
@@ -795,3 +846,447 @@ class ConfigExportService:
         wb.save(buf)
         buf.seek(0)
         return buf.getvalue()
+
+
+# ─── 客户横向工作簿导入 ──────────────────────────────────────────────────────
+
+class CustomerWorkbookImportService:
+    """解析“每个产品一个 Sheet、每列一个维度”的客户自助配置模板。"""
+
+    PRODUCT_INFO_SHEET = '产品信息'
+    PRICE_SHEET = '组合价格'
+    EMPTY_VALUES = {'', 'N/A', 'NA', '不适用', '-'}
+    SECONDARY_MARKERS = ('二级', '2级')
+
+    @staticmethod
+    def _text(value) -> str:
+        text = str(value or '').replace('\n', ' ').replace('\r', ' ').strip()
+        text = ' '.join(text.split())
+        return text.replace('（', '(').replace('）', ')')
+
+    @classmethod
+    def _is_empty(cls, value) -> bool:
+        return cls._text(value).upper() in cls.EMPTY_VALUES
+
+    @classmethod
+    def _key(cls, label: str, used: set, prefix: str = '') -> str:
+        raw = cls._text(label).lower()
+        for ch in ('/', '\\', ' ', '-', '(', ')', '：', ':', ',', '，'):
+            raw = raw.replace(ch, '_')
+        raw = '_'.join(part for part in raw.split('_') if part)
+        base = f'{prefix}_{raw}'.strip('_')[:90] or 'dimension'
+        key = base
+        suffix = 2
+        while key in used:
+            key = f'{base}_{suffix}'[:100]
+            suffix += 1
+        used.add(key)
+        return key
+
+    @classmethod
+    def _default_name(cls, sheet_name: str) -> str:
+        name = cls._text(sheet_name)
+        if '(' in name and name.endswith(')'):
+            inside = name.rsplit('(', 1)[1][:-1].strip()
+            if inside:
+                return inside
+        for prefix in ('椅类模板', '桌类模板', '沙发', '休闲椅'):
+            if name.startswith(prefix):
+                name = name[len(prefix):].strip()
+        return name or cls._text(sheet_name)
+
+    @staticmethod
+    def _infer_category(sheet_name: str) -> tuple[str, str]:
+        if '桌' in sheet_name:
+            return 'DESKS_WORKSTATIONS', 'FIXED_DESK'
+        if '沙发' in sheet_name:
+            return 'SEATING', 'LOUNGE_CHAIR'
+        return 'SEATING', 'TASK_CHAIR'
+
+    @classmethod
+    def generate_template(cls) -> bytes:
+        wb = openpyxl.Workbook()
+        info = wb.active
+        info.title = cls.PRODUCT_INFO_SHEET
+        info.append(['配置Sheet', '产品编号', '产品名称', '一级分类', '二级分类', '品牌',
+                     '产地', '货期', '形状', '描述'])
+        info.append(['Think配置', 'THINK-001', 'Think办公椅', 'SEATING', 'TASK_CHAIR',
+                     'Steelcase', '进口', 'WITHIN_45D', '', '示例产品'])
+
+        options = wb.create_sheet('Think配置')
+        options.append(['背框颜色', '坐垫饰面', '布（二级）', '皮（二级）', '扶手配置', '头枕'])
+        options.append(['黑', '布', 'P1(OTTO)', 'A1(Leather)', '2D', '无'])
+        options.append(['白', '皮', 'P2(Buzz2)', '', '4D', '有'])
+
+        prices = wb.create_sheet(cls.PRICE_SHEET)
+        prices.append(['配置Sheet', '组合编号', '组合名称', '是否默认', '最终价格',
+                       '背框颜色', '坐垫饰面', '坐垫饰面_布', '坐垫饰面_皮', '扶手配置', '头枕'])
+        prices.append(['Think配置', 'THINK-STD', '标准配置', '是', 3580,
+                       '黑', '布', 'P1(OTTO)', '', '2D', '无'])
+        prices.append(['Think配置', 'THINK-LEATHER', '皮面配置', '否', 4680,
+                       '黑', '皮', '', 'A1(Leather)', '4D', '有'])
+
+        notes = wb.create_sheet('填写说明')
+        notes.append(['说明'])
+        notes.append(['每个产品配置 Sheet：第一行是配置维度，下面逐列填写可选项。'])
+        notes.append(['“布（二级）/皮（二级）”自动依赖前一个饰面/材质列；N/A 和空白不会导入。'])
+        notes.append(['组合价格：每一行必须是一套完整有效配置；是否默认每个产品最多一行“是”。'])
+        notes.append(['新增未知列无需改程序，上传预览会按列自动生成维度并显示解析结果。'])
+        buf = BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        return buf.getvalue()
+
+    @classmethod
+    def parse(cls, file) -> dict:
+        # 使用普通模式以读取隐藏列和合并单元格信息；客户模板体量很小。
+        wb = openpyxl.load_workbook(file, read_only=False, data_only=True)
+        errors, warnings = [], []
+        info_by_sheet = {}
+        if cls.PRODUCT_INFO_SHEET in wb.sheetnames:
+            rows = list(wb[cls.PRODUCT_INFO_SHEET].iter_rows(values_only=True))
+            if rows:
+                headers = [cls._text(v) for v in rows[0]]
+                for row_no, row in enumerate(rows[1:], start=2):
+                    data = dict(zip(headers, row))
+                    sheet = cls._text(data.get('配置Sheet'))
+                    if not sheet:
+                        continue
+                    if sheet not in wb.sheetnames:
+                        errors.append(f'{cls.PRODUCT_INFO_SHEET}!A{row_no}: 配置Sheet“{sheet}”不存在')
+                        continue
+                    if sheet in info_by_sheet:
+                        errors.append(f'{cls.PRODUCT_INFO_SHEET}!A{row_no}: 配置Sheet“{sheet}”重复')
+                        continue
+                    info_by_sheet[sheet] = data
+        else:
+            warnings.append('缺少“产品信息”Sheet：产品名称和分类将根据配置 Sheet 名称自动推断')
+
+        ignored = {cls.PRODUCT_INFO_SHEET, cls.PRICE_SHEET, '填写说明'}
+        config_sheets = [name for name in wb.sheetnames if name not in ignored and not name.endswith('组合价格')]
+        products = {}
+        conditional_children = {
+            '坐垫饰面': {'布', '皮'},
+            '背饰面': {'布', '皮', '网'},
+            '软包类型': {'布', '皮'},
+            '屏风材质': {'布', 'PET', '钢'},
+        }
+        for sheet_name in config_sheets:
+            ws = wb[sheet_name]
+            headers = [cls._text(ws.cell(1, col).value) for col in range(1, ws.max_column + 1)]
+            used, dimensions, header_map = set(), {}, {}
+            parent_key = ''
+            parent_label = ''
+            for col, header in enumerate(headers, start=1):
+                if not header:
+                    continue
+                column_letter = openpyxl.utils.get_column_letter(col)
+                if ws.column_dimensions[column_letter].hidden:
+                    warnings.append(f'{sheet_name}!{column_letter}:{column_letter}: 隐藏列“{header}”已忽略')
+                    continue
+                options = []
+                seen = set()
+                for row in range(2, ws.max_row + 1):
+                    value = cls._text(ws.cell(row, col).value)
+                    if cls._is_empty(value) or value in seen:
+                        continue
+                    seen.add(value)
+                    options.append({'key': value, 'label': value})
+                if not options:
+                    continue
+                plain_header = header.split('(')[0].strip()
+                explicit_secondary = any(marker in header for marker in cls.SECONDARY_MARKERS)
+                contextual_secondary = (
+                    bool(parent_key)
+                    and parent_label in conditional_children
+                    and plain_header in conditional_children[parent_label]
+                )
+                secondary = bool(parent_key) and (explicit_secondary or contextual_secondary)
+                if secondary:
+                    parent_value = plain_header
+                    key = cls._key(parent_value, used, parent_key)
+                    parent = f'{parent_key}={parent_value}'
+                    label = f'{parent_label}-{parent_value}'
+                else:
+                    key = cls._key(header, used)
+                    parent = ''
+                    label = header
+                    parent_key = key
+                    parent_label = label
+                dimensions[key] = {
+                    'key': key, 'label': label, 'options': options,
+                    'parent_dimension': parent, 'is_required': True,
+                    'sort_order': len(dimensions), 'source_header': header,
+                }
+                # 重复的“布（二级）”等裸标题存在歧义时，不允许价格表用裸标题误匹配；
+                # 始终提供“父维度_子值”限定别名。
+                if header in header_map and header_map[header] != key:
+                    header_map[header] = None
+                else:
+                    header_map[header] = key
+                header_map[key] = key
+                if secondary:
+                    header_map[f'{parent_label}_{parent_value}'] = key
+                    header_map[f'{parent_label}-{parent_value}'] = key
+
+            meta = info_by_sheet.get(sheet_name, {})
+            category_l1, category_l2 = cls._infer_category(sheet_name)
+            name = cls._text(meta.get('产品名称')) or cls._default_name(sheet_name)
+            code = cls._text(meta.get('产品编号')) or f'IMP-{hashlib.sha1(sheet_name.encode()).hexdigest()[:8].upper()}'
+            products[sheet_name] = {
+                'sheet_name': sheet_name, 'name': name, 'code': code,
+                'category_l1': cls._text(meta.get('一级分类')) or category_l1,
+                'category_l2': cls._text(meta.get('二级分类')) or category_l2,
+                'brand': cls._text(meta.get('品牌')),
+                'origin': BatchProductImportService.ORIGIN_MAP.get(cls._text(meta.get('产地')), 'DOMESTIC'),
+                'lead_time': cls._text(meta.get('货期')),
+                'shape': cls._text(meta.get('形状')),
+                'pricing_mode': 'MATRIX', 'description': cls._text(meta.get('描述')),
+                'dimensions': dimensions, 'header_map': header_map,
+                'presets': [], 'price_matrix': [],
+                '_preset_codes': set(), '_price_signatures': set(),
+            }
+            if not dimensions:
+                warnings.append(f'{sheet_name}: 未发现有选项的配置列')
+
+        seen_codes, seen_names = {}, {}
+        for product in products.values():
+            code_key = product['code'].casefold()
+            name_key = product['name'].casefold()
+            if code_key in seen_codes:
+                errors.append(
+                    f'{product["sheet_name"]}: 产品编号“{product["code"]}”与配置 Sheet“{seen_codes[code_key]}”重复')
+            else:
+                seen_codes[code_key] = product['sheet_name']
+            if name_key in seen_names:
+                errors.append(
+                    f'{product["sheet_name"]}: 产品名称“{product["name"]}”与配置 Sheet“{seen_names[name_key]}”重复')
+            else:
+                seen_names[name_key] = product['sheet_name']
+            if not Product.objects.filter(code=product['code']).exists():
+                name_matches = Product.objects.filter(name=product['name'])
+                if name_matches.count() > 1:
+                    errors.append(
+                        f'{product["sheet_name"]}: 产品名称“{product["name"]}”匹配到多条已有产品，请填写唯一产品编号')
+
+        price_sheets = []
+        if cls.PRICE_SHEET in wb.sheetnames:
+            price_sheets.append((cls.PRICE_SHEET, None))
+        price_sheets.extend((name, name[:-4]) for name in wb.sheetnames if name.endswith('组合价格') and name != cls.PRICE_SHEET)
+        for price_sheet, fixed_product_sheet in price_sheets:
+            ws = wb[price_sheet]
+            rows = list(ws.iter_rows(values_only=True))
+            if not rows:
+                continue
+            headers = [cls._text(v) for v in rows[0]]
+            duplicate_headers = sorted({header for header in headers if header and headers.count(header) > 1})
+            if duplicate_headers:
+                errors.append(f'{price_sheet}: 表头重复：{"、".join(duplicate_headers)}')
+                continue
+            for row_no, row in enumerate(rows[1:], start=2):
+                data = dict(zip(headers, row))
+                target_sheet = fixed_product_sheet or cls._text(data.get('配置Sheet'))
+                if not target_sheet:
+                    continue
+                product = products.get(target_sheet)
+                if not product:
+                    errors.append(f'{price_sheet} 第{row_no}行: 配置Sheet“{target_sheet}”不存在')
+                    continue
+                try:
+                    price = Decimal(str(data.get('最终价格')))
+                except Exception:
+                    errors.append(f'{price_sheet} 第{row_no}行: 最终价格无效')
+                    continue
+                selections = {}
+                row_invalid = False
+                for header, value in data.items():
+                    normalized = cls._text(value)
+                    normalized_header = cls._text(header)
+                    key = product['header_map'].get(normalized_header)
+                    if (normalized_header in product['header_map'] and key is None
+                            and not cls._is_empty(normalized)):
+                        errors.append(
+                            f'{price_sheet} 第{row_no}行: 配置列“{normalized_header}”有歧义，请使用带父维度的限定列名')
+                        row_invalid = True
+                        continue
+                    if key and not cls._is_empty(normalized):
+                        allowed = {o['key'] for o in product['dimensions'][key]['options']}
+                        if normalized not in allowed:
+                            errors.append(f'{price_sheet}!{openpyxl.utils.get_column_letter(headers.index(header) + 1)}{row_no}: {header} 的选项“{normalized}”不在选项库')
+                            row_invalid = True
+                        selections[key] = normalized
+                selections = ProductPriceMatrix.normalize_selections(selections)
+                if not selections:
+                    errors.append(f'{price_sheet} 第{row_no}行: 未填写配置选项')
+                    continue
+                missing = []
+                invisible = []
+                for dim in sorted(product['dimensions'].values(), key=lambda item: item['sort_order']):
+                    parent = dim['parent_dimension']
+                    visible = True
+                    if parent:
+                        parent_key, _, parent_value = parent.partition('=')
+                        visible = parent_key in selections and (
+                            not parent_value or selections.get(parent_key) == parent_value
+                        )
+                    if visible and dim['is_required'] and dim['key'] not in selections:
+                        missing.append(dim['label'])
+                    if not visible and dim['key'] in selections:
+                        invisible.append(dim['label'])
+                if missing:
+                    errors.append(f'{price_sheet} 第{row_no}行: 缺少当前条件下必填配置：{"、".join(missing)}')
+                    row_invalid = True
+                if invisible:
+                    errors.append(f'{price_sheet} 第{row_no}行: 包含当前条件下不可见配置：{"、".join(invisible)}')
+                    row_invalid = True
+                if row_invalid:
+                    continue
+                code = cls._text(data.get('组合编号')) or f'COMBO-{row_no}'
+                label = cls._text(data.get('组合名称')) or code
+                signature = ProductPriceMatrix.build_signature(selections)
+                if code.casefold() in product['_preset_codes']:
+                    errors.append(f'{price_sheet} 第{row_no}行: 组合编号“{code}”重复')
+                    continue
+                if signature in product['_price_signatures']:
+                    errors.append(f'{price_sheet} 第{row_no}行: 配置组合与前面的价格行重复')
+                    continue
+                product['_preset_codes'].add(code.casefold())
+                product['_price_signatures'].add(signature)
+                is_default = BatchProductImportService._truthy(data.get('是否默认'))
+                product['price_matrix'].append({'config': selections, 'price': price})
+                product['presets'].append({
+                    'code': code, 'label': label, 'selections': selections,
+                    'is_default': is_default,
+                })
+
+        for product in products.values():
+            defaults = [p for p in product['presets'] if p['is_default']]
+            if len(defaults) > 1:
+                errors.append(f'{product["sheet_name"]}: 默认组合超过一条')
+            if not product['price_matrix']:
+                warnings.append(f'{product["sheet_name"]}: 暂无组合价格，只能导入配置选项，导入后不能加入报价单')
+            if product['price_matrix'] and not defaults:
+                warnings.append(f'{product["sheet_name"]}: 未设置默认组合，产品详情将默认进入自定义配置')
+
+        summary_products = []
+        for product in products.values():
+            summary_products.append({
+                'name': product['name'], 'code': product['code'], 'sheet_name': product['sheet_name'],
+                'dimension_count': len(product['dimensions']),
+                'option_count': sum(len(d['options']) for d in product['dimensions'].values()),
+                'preset_count': len(product['presets']),
+                'price_count': len(product['price_matrix']),
+            })
+        summary = {
+            'format': 'horizontal', 'product_count': len(products),
+            'products': summary_products, 'errors': errors, 'warnings': warnings,
+        }
+        return {'format': 'horizontal', 'products': products, 'summary': summary,
+                'errors': errors, 'warnings': warnings}
+
+    @classmethod
+    @transaction.atomic
+    def execute_import(cls, parsed: dict, user) -> dict:
+        created = updated = 0
+        for meta in parsed['products'].values():
+            brand = None
+            if meta['brand']:
+                brand, _ = Brand.objects.get_or_create(name=meta['brand'])
+            product = Product.objects.filter(code=meta['code']).first()
+            if not product:
+                name_matches = Product.objects.filter(name=meta['name'])
+                if name_matches.count() > 1:
+                    raise ValueError(f'产品名称“{meta["name"]}”匹配到多条已有产品，请填写唯一产品编号')
+                product = name_matches.first()
+            incoming_has_prices = bool(meta['price_matrix'])
+            fields = {
+                'name': meta['name'], 'code': meta['code'], 'category_l1': meta['category_l1'],
+                'category_l2': meta['category_l2'], 'brand': brand, 'origin': meta['origin'],
+                'lead_time': meta['lead_time'], 'shape': meta['shape'],
+                'description': meta['description'],
+            }
+            if product is None or incoming_has_prices:
+                fields['pricing_mode'] = 'MATRIX'
+            if product:
+                for key, value in fields.items():
+                    setattr(product, key, value)
+                product.save()
+                updated += 1
+            else:
+                product = Product.objects.create(created_by=user, **fields)
+                created += 1
+
+            # 选项库始终按工作簿更新；只有工作簿包含完整组合价格时才替换价格和预设。
+            # 这样客户原始“仅选项”文件不会清空线上已有可报价数据。
+            product.config_dimensions.all().delete()
+            if incoming_has_prices:
+                product.price_matrix.all().delete()
+                product.price_rules.all().delete()
+                product.config_presets.all().delete()
+            for dim in meta['dimensions'].values():
+                ProductConfigDimension.objects.create(
+                    product=product, dimension_key=dim['key'], dimension_label=dim['label'],
+                    options=dim['options'], parent_dimension=dim['parent_dimension'],
+                    is_required=dim['is_required'], sort_order=dim['sort_order'],
+                )
+            if incoming_has_prices:
+                for entry in meta['price_matrix']:
+                    config = ProductPriceMatrix.normalize_selections(entry['config'])
+                    ProductPriceMatrix.objects.create(
+                        product=product, config_signature=ProductPriceMatrix.build_signature(config),
+                        config_attributes=config, price=entry['price'],
+                    )
+                for order, preset in enumerate(meta['presets']):
+                    ProductConfigPreset.objects.create(
+                        product=product, code=preset['code'], label=preset['label'],
+                        selections=ProductPriceMatrix.normalize_selections(preset['selections']),
+                        is_default=preset['is_default'], sort_order=order,
+                    )
+                prices = [entry['price'] for entry in meta['price_matrix']]
+                product.min_price = min(prices)
+                product.save(update_fields=['min_price'])
+        return {'created': created, 'updated': updated, 'warnings': parsed.get('warnings', [])}
+
+
+# ─── 事务化产品组合创建 ──────────────────────────────────────────────────────
+
+class ProductCompositeService:
+    @staticmethod
+    @transaction.atomic
+    def create(validated: dict, user, files=None) -> Product:
+        product_data = validated['product']
+        product = Product.objects.create(created_by=user, **product_data)
+        dimensions = {}
+        for order, dim in enumerate(validated.get('dimensions', [])):
+            item = ProductConfigDimension.objects.create(
+                product=product, sort_order=dim.get('sort_order', order), **{
+                    key: value for key, value in dim.items() if key != 'sort_order'
+                },
+            )
+            dimensions[item.dimension_key] = item
+
+        matrix_prices = []
+        for entry in validated.get('price_matrix', []):
+            config = ProductPriceMatrix.normalize_selections(entry.get('config', {}))
+            if not config:
+                raise ValueError('价格组合必须包含配置选项')
+            price = Decimal(str(entry.get('price')))
+            ProductPriceMatrix.objects.create(
+                product=product, config_signature=ProductPriceMatrix.build_signature(config),
+                config_attributes=config, price=price,
+            )
+            matrix_prices.append(price)
+
+        for order, preset in enumerate(validated.get('presets', [])):
+            ProductConfigPreset.objects.create(
+                product=product, code=preset['code'], label=preset.get('label', ''),
+                selections=ProductPriceMatrix.normalize_selections(preset.get('selections', {})),
+                is_default=preset.get('is_default', False),
+                sort_order=preset.get('sort_order', order),
+            )
+        if matrix_prices:
+            product.min_price = min(matrix_prices)
+            product.save(update_fields=['min_price'])
+        if files:
+            ProductImageService.upload_images(product, list(files))
+        return product

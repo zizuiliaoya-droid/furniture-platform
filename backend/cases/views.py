@@ -6,14 +6,16 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
-from auth_app.permissions import IsAdminRole
+from auth_app.permissions import HasModulePermission, require_module_permission
 from common.file_storage import FileStorageService
 from .models import Case, CaseImage
 from .serializers import CaseDetailSerializer, CaseImageSerializer, CaseListSerializer
 
 
 class CaseViewSet(ModelViewSet):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasModulePermission]
+    module_name = 'CASE'
+    permission_action_map = {'upload_images': 'update'}
 
     def get_queryset(self):
         qs = Case.objects.select_related('created_by').prefetch_related('images', 'products')
@@ -30,15 +32,10 @@ class CaseViewSet(ModelViewSet):
             return CaseListSerializer
         return CaseDetailSerializer
 
-    def get_permissions(self):
-        if self.action in ('create', 'update', 'partial_update', 'destroy'):
-            return [IsAuthenticated(), IsAdminRole()]
-        return [IsAuthenticated()]
-
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
 
-    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, IsAdminRole])
+    @action(detail=True, methods=['post'])
     def upload_images(self, request, pk=None):
         case = self.get_object()
         files = request.FILES.getlist('images')
@@ -57,7 +54,8 @@ class CaseViewSet(ModelViewSet):
 
 
 @api_view(['DELETE'])
-@permission_classes([IsAuthenticated, IsAdminRole])
+@permission_classes([IsAuthenticated])
+@require_module_permission('CASE', 'update')
 def delete_case_image(request, pk):
     try:
         image = CaseImage.objects.get(pk=pk)

@@ -15,7 +15,7 @@ export default function QuoteListPage() {
   const [quotes, setQuotes] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
-  const isAdmin = useAuthStore((s) => s.user?.role === 'ADMIN');
+  const isAdmin = useAuthStore((s) => !!s.user?.is_admin);
 
   const fetchQuotes = async (params?: any) => {
     setLoading(true);

@@ -19,7 +19,7 @@ export default function CaseDetailPage() {
   const { id } = useParams();
   const [caseData, setCaseData] = useState<any>(null);
   const navigate = useNavigate();
-  const isAdmin = useAuthStore((s) => s.user?.role === 'ADMIN');
+  const isAdmin = useAuthStore((s) => !!s.user?.is_admin);
 
   useEffect(() => {
     if (id) caseService.getCase(Number(id)).then(({ data }) => setCaseData(data));

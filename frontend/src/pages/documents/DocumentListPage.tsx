@@ -25,7 +25,7 @@ export default function DocumentListPage() {
   const [richTextOpen, setRichTextOpen] = useState(false);
   const [editingRichText, setEditingRichText] = useState<any>(null);
   const [richTextForm] = Form.useForm();
-  const isAdmin = useAuthStore((s) => s.user?.role === 'ADMIN');
+  const isAdmin = useAuthStore((s) => !!s.user?.is_admin);
   const isTraining = apiDocType === 'TRAINING';
 
   const fetchDocs = async (params?: any) => {

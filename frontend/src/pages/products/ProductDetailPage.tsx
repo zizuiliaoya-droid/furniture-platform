@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Button, Card, Col, Descriptions, Divider, Image, InputNumber, List,
+  Alert, Button, Card, Col, Descriptions, Divider, Image, InputNumber, List,
   message, Modal, Radio, Row, Select, Space, Spin, Tag, Typography,
 } from 'antd';
 import { EditOutlined, PlusOutlined, ShoppingCartOutlined } from '@ant-design/icons';
@@ -35,7 +35,9 @@ export default function ProductDetailPage() {
   const { id } = useParams();
   const [searchParams] = useSearchParams();
   const preselectedQuoteId = searchParams.get('quoteId');
+  const preselectedItemId = searchParams.get('itemId');
   const preselectedSelectionsRaw = searchParams.get('selections');
+  const isEditingQuoteItem = !!preselectedItemId;
   const [product, setProduct] = useState<any>(null);
   const [dimensions, setDimensions] = useState<any[]>([]);
   const [selections, setSelections] = useState<Record<string, string>>({});
@@ -49,10 +51,9 @@ export default function ProductDetailPage() {
   const [mainImagePath, setMainImagePath] = useState<string>('');
   const [configMode, setConfigMode] = useState<'default' | 'custom'>('custom');
   const [quantity, setQuantity] = useState(1);
-  const [discount, setDiscount] = useState(0);
   const [addingToQuote, setAddingToQuote] = useState(false);
   const navigate = useNavigate();
-  const isAdmin = useAuthStore((s) => s.user?.role === 'ADMIN');
+  const isAdmin = useAuthStore((s) => !!s.user?.is_admin);
 
   useEffect(() => {
     if (!id) return;
@@ -61,20 +62,33 @@ export default function ProductDetailPage() {
     productService.getProductDocuments(Number(id)).then(({ data }) => setDocuments(data));
   }, [id]);
 
-  // 初始化主图（封面优先）
+  // 初始化主图和报价明细展示图（封面优先）
   useEffect(() => {
     if (product?.images?.length) {
       const cover = product.images.find((i: any) => i.is_cover) || product.images[0];
       setMainImagePath(cover.image_path);
+      setSelectedImageId((current) => current ?? cover.id);
     }
   }, [product]);
 
-  // 价格计算（debounce 300ms）
+  // 编辑报价明细时恢复原数量、图片和配置；URL 参数仍作为快速预填兜底。
   useEffect(() => {
-    if (!id || !Object.keys(selections).length) {
-      setPriceResult(null);
-      return;
-    }
+    if (!preselectedQuoteId || !preselectedItemId) return;
+    quoteService.getQuote(Number(preselectedQuoteId)).then(({ data }) => {
+      const item = (data.items || []).find((candidate: any) => candidate.id === Number(preselectedItemId));
+      if (!item) return;
+      setQuantity(item.quantity || 1);
+      if (item.image) setSelectedImageId(item.image);
+      if (!preselectedSelectionsRaw && item.config_attributes) {
+        setSelections(item.config_attributes);
+        setConfigMode('custom');
+      }
+    }).catch(() => message.error('无法读取原报价明细'));
+  }, [preselectedQuoteId, preselectedItemId, preselectedSelectionsRaw]);
+
+  // 价格计算（debounce 300ms）；无配置维度的固定价产品也以空 selections 算价。
+  useEffect(() => {
+    if (!id || !product) return;
     const timer = setTimeout(() => {
       setPriceLoading(true);
       productService.calculatePrice(Number(id), selections)
@@ -83,7 +97,7 @@ export default function ProductDetailPage() {
         .finally(() => setPriceLoading(false));
     }, 300);
     return () => clearTimeout(timer);
-  }, [id, selections]);
+  }, [id, product, selections]);
 
   const handleDimensionChange = (key: string, value: string) => {
     setSelections(prev => {
@@ -108,25 +122,23 @@ export default function ProductDetailPage() {
     });
   };
 
-  // QT-9 默认配置：优先取默认预设的选项组合；否则按可见必填维度取首个选项
+  // QT-9 默认配置只接受后端保存的完整默认预设，绝不再按各维度首项伪造。
   const defaultSelections = useMemo(() => {
     const preset = (product?.config_presets || []).find(
       (p: any) => p.is_default && p.selections && Object.keys(p.selections || {}).length
     );
-    if (preset) return preset.selections as Record<string, string>;
-    const sel: Record<string, string> = {};
-    for (const dim of dimensions) {
-      if (!isDimVisible(dim, sel)) continue;
-      if (dim.options?.length) sel[dim.dimension_key] = dim.options[0].key;
-    }
-    return sel;
-  }, [product, dimensions]);
+    return (preset?.selections || {}) as Record<string, string>;
+  }, [product]);
 
   const hasDefault = dimensions.length > 0 && Object.keys(defaultSelections).length > 0;
 
-  // 有配置维度时默认进入"默认配置"模式；若 URL 带 selections（QT-5 改配置跳转），用自定义模式并预填
+  // 有真实默认预设时进入默认模式；改配置或无默认预设时进入自定义模式。
   useEffect(() => {
-    if (!dimensions.length) return;
+    if (!dimensions.length) {
+      setConfigMode('custom');
+      setSelections({});
+      return;
+    }
     if (preselectedSelectionsRaw) {
       try {
         const pre = JSON.parse(decodeURIComponent(preselectedSelectionsRaw));
@@ -137,8 +149,14 @@ export default function ProductDetailPage() {
         }
       } catch { /* ignore */ }
     }
-    setConfigMode('default');
-  }, [dimensions.length, preselectedSelectionsRaw]);
+    if (hasDefault) {
+      setConfigMode('default');
+      setSelections(defaultSelections);
+    } else {
+      setConfigMode('custom');
+      setSelections({});
+    }
+  }, [dimensions.length, preselectedSelectionsRaw, hasDefault, defaultSelections]);
 
   // 默认配置模式：锁定为默认选项组合
   useEffect(() => {
@@ -146,31 +164,38 @@ export default function ProductDetailPage() {
   }, [configMode, defaultSelections]);
 
   const openQuoteModal = useCallback(async () => {
+    if (isEditingQuoteItem && preselectedQuoteId) {
+      setSelectedQuoteId(Number(preselectedQuoteId));
+      setQuoteModalOpen(true);
+      return;
+    }
     const { data } = await quoteService.getQuotes({ status: 'DRAFT' });
     setQuotes(data.results || data);
-    if (preselectedQuoteId) {
-      setSelectedQuoteId(Number(preselectedQuoteId));
-    }
     setQuoteModalOpen(true);
-  }, [preselectedQuoteId]);
+  }, [isEditingQuoteItem, preselectedQuoteId]);
 
   const handleAddToQuote = async () => {
     if (!selectedQuoteId || !product) return;
     setAddingToQuote(true);
+    const payload = {
+      product_id: product.id,
+      selections,
+      image_id: selectedImageId,
+      quantity,
+    };
     try {
-      await quoteService.addItemFromProduct(selectedQuoteId, {
-        product_id: product.id,
-        selections,
-        image_id: selectedImageId,
-        quantity,
-      });
-      message.success('已加入报价单');
-      setQuoteModalOpen(false);
-      if (preselectedQuoteId) {
-        navigate(`/quotes/${preselectedQuoteId}`);
+      if (preselectedItemId) {
+        await quoteService.updateItemFromProduct(Number(preselectedItemId), payload);
+        message.success('配置修改已保存');
+      } else {
+        await quoteService.addItemFromProduct(selectedQuoteId, payload);
+        message.success('已加入报价单');
       }
+      setQuoteModalOpen(false);
+      navigate(`/quotes/${preselectedQuoteId || selectedQuoteId}`);
     } catch (err: any) {
-      message.error(err.response?.data?.detail || '加入失败');
+      const detail = err.response?.data?.detail;
+      message.error(typeof detail === 'string' ? detail : '报价明细保存失败');
     } finally {
       setAddingToQuote(false);
     }
@@ -254,8 +279,8 @@ export default function ProductDetailPage() {
           </Card>
 
           {/* 配置选择器 */}
-          {dimensions.length > 0 && (
-            <Card title="配置选择" style={{ marginTop: 16 }}>
+          {(dimensions.length > 0 || product.base_price != null || product.min_price != null) && (
+            <Card title={dimensions.length > 0 ? '配置选择' : '产品价格'} style={{ marginTop: 16 }}>
               {hasDefault && (
                 <Radio.Group
                   value={configMode}
@@ -336,7 +361,7 @@ export default function ProductDetailPage() {
                   disabled={!priceResult?.valid}
                   onClick={openQuoteModal}
                 >
-                  加入报价单
+                  {isEditingQuoteItem ? '保存配置修改' : '加入报价单'}
                 </Button>
               </div>
             </Card>
@@ -372,30 +397,38 @@ export default function ProductDetailPage() {
 
       {/* 加入报价单弹窗 */}
       <Modal
-        title="加入报价单"
+        title={isEditingQuoteItem ? '保存配置修改' : '加入报价单'}
         open={quoteModalOpen}
         onCancel={() => setQuoteModalOpen(false)}
         onOk={handleAddToQuote}
         confirmLoading={addingToQuote}
-        okText="确认加入"
+        okText={isEditingQuoteItem ? '保存修改' : '确认加入'}
         okButtonProps={{ disabled: !selectedQuoteId }}
       >
         <Space direction="vertical" style={{ width: '100%' }} size="middle">
-          {/* 选择目标报价单 */}
-          <div>
-            <Text strong>目标报价单</Text>
-            <Select
-              placeholder="选择报价单"
-              style={{ width: '100%', marginTop: 4 }}
-              value={selectedQuoteId}
-              onChange={setSelectedQuoteId}
-              options={quotes.map((q: any) => ({ label: `${q.title} - ${q.customer_name}`, value: q.id }))}
+          {isEditingQuoteItem ? (
+            <Alert
+              type="info"
+              showIcon
+              message={`正在修改原报价单 #${preselectedQuoteId}`}
+              description="保存后只更新原报价明细，不会移动到其他报价单。"
             />
-            <Button type="link" size="small" icon={<PlusOutlined />}
-              onClick={() => navigate('/quotes/new')}>
-              新建报价单
-            </Button>
-          </div>
+          ) : (
+            <div>
+              <Text strong>目标报价单</Text>
+              <Select
+                placeholder="选择报价单"
+                style={{ width: '100%', marginTop: 4 }}
+                value={selectedQuoteId}
+                onChange={setSelectedQuoteId}
+                options={quotes.map((q: any) => ({ label: `${q.title} - ${q.customer_name}`, value: q.id }))}
+              />
+              <Button type="link" size="small" icon={<PlusOutlined />}
+                onClick={() => navigate('/quotes/new')}>
+                新建报价单
+              </Button>
+            </div>
+          )}
 
           {/* 选择明细展示图 */}
           {product.images?.length > 0 && (

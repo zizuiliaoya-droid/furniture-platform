@@ -9,9 +9,9 @@
 - **Project Type**: Brownfield（棕地，存在完整 backend + frontend 实现，进入新一轮迭代）
 - **Start Date**: 2026-04-23T00:00:00Z
 - **Last Iteration**: 2026-05 优化迭代 — CONSTRUCTION 全量完成 + 核心链路强化 + 上线 Zeabur（2026-06-19）
-- **Current Iteration**: OPERATIONS - 已上线测试环境
-- **Current Stage**: OPERATIONS - Deployed & Verified (Zeabur 香港节点)
-- **Live URLs**: 前端 https://furniture-zk.zeabur.app ｜ 后端 https://furniture-api-zk.zeabur.app
+- **Current Iteration**: 2026-07-24 客户横向模板与体验链路加固
+- **Current Stage**: CONSTRUCTION - 发布前审计整改完成并通过验证，等待 GitHub 自动部署验收
+- **Live URLs**: 前端 https://furniture-zk.zeabur.app ｜ 后端 https://furniture-api-zk.zeabur.app（本轮尚未部署）
 - **Test Login**: admin / admin123456
 
 ## User Request
@@ -87,3 +87,29 @@
 - G-10 文档在线预览 + 培训资料富文本
 - G-11 分享功能批量 + 品牌展示
 - G-12 旧分类体系过渡兼容收尾
+
+
+## 2026-07-24 客户横向模板与体验链路加固迭代
+
+### CONSTRUCTION
+- [x] 执行计划批准：`construction/plans/customer-template-and-ux-hardening-plan.md`
+- [x] 客户横向多 Sheet 模板、组合价格 Matrix、完整默认 preset
+- [x] 产品基本信息 + 图片 + 配置事务化一页创建
+- [x] 固定价产品加入报价、默认封面、中文配置摘要
+- [x] `itemId` 原位改配置，不新增重复报价明细
+- [x] 报价 Excel 嵌图、仅整单折扣、分享候选排重
+- [x] 用户编辑/部门/密码重置与超级管理员保护
+- [x] 产品/报价模块权限及对象级写入硬校验
+- [x] 客户原始 Excel 4 Sheet 只读解析回归
+- [x] Django 迁移检查：No changes detected
+- [x] SQLite pytest：49 passed
+- [x] 前端 TypeScript + Vite 生产构建通过
+- [x] 2026-07-25 发布前审计方案 B：导入、报价、账户、权限、体验和部署入口 11 项整改完成
+- [x] 权限矩阵后端闭环：产品/图册/案例/文档/报价/分享及聚合入口
+- [x] 整改后 SQLite pytest：62 passed；真实客户 Excel 4 产品、0 error
+
+### DELIVERY
+- [x] 软件修改记录、执行计划和审计日志已更新
+- [ ] 客户统一验收
+- [x] Git commit / push（2026-07-25 用户明确批准，推送 `origin/main`）
+- [ ] Zeabur 自动部署与线上验收

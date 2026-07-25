@@ -86,21 +86,15 @@ export default function ProductFormPage() {
         await productService.updateProduct(Number(id), values);
         message.success('产品更新成功');
       } else {
-        // 一页提交：创建产品 → 上传图片 → 创建配置维度
-        const { data: created } = await productService.createProduct(values);
-        const newId = created.id;
-        if (pendingImages.length) {
-          const fd = new FormData();
-          pendingImages.forEach((f) => fd.append('images', f));
-          try { await productService.uploadImages(newId, fd); }
-          catch { message.warning('产品已创建，但部分图片上传失败'); }
-        }
-        for (let i = 0; i < pendingDims.length; i++) {
-          const d = pendingDims[i];
-          try {
-            await productService.addConfigDimension(newId, { ...d, sort_order: i });
-          } catch { message.warning(`维度「${d.dimension_label}」创建失败`); }
-        }
+        await productService.createComposite({
+          product: values,
+          dimensions: pendingDims.map((dimension, index) => ({
+            ...dimension,
+            sort_order: index,
+          })),
+          presets: [],
+          price_matrix: [],
+        }, pendingImages);
         message.success('产品创建成功');
       }
       navigate('/products');

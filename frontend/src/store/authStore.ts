@@ -6,7 +6,10 @@ interface User {
   username: string;
   display_name: string;
   role: 'SUPER_ADMIN' | 'ADMIN' | 'DEPT_MANAGER' | 'STAFF';
+  department: number | null;
   is_active: boolean;
+  is_admin: boolean;
+  permissions?: Record<string, Record<string, boolean>>;
 }
 
 interface AuthState {

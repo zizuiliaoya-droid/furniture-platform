@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
-  Button, Card, Descriptions, Dropdown, Image, InputNumber, message, Modal, Popconfirm,
-  Select, Space, Table, Tag, Tooltip, Typography,
+  Alert, Button, Card, Descriptions, Dropdown, Image, InputNumber, message, Modal, Popconfirm,
+  Select, Space, Spin, Table, Tag, Tooltip, Typography,
 } from 'antd';
 import {
   CopyOutlined, DeleteOutlined, DownloadOutlined, EditOutlined, FilePdfOutlined, FileExcelOutlined,
@@ -9,7 +9,6 @@ import {
 } from '@ant-design/icons';
 import { useNavigate, useParams } from 'react-router-dom';
 import { quoteService } from '../../services/quoteService';
-import { authService } from '../../services/authService';
 import { useAuthStore } from '../../store/authStore';
 
 const { Title, Text } = Typography;
@@ -25,6 +24,8 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
 export default function QuoteDetailPage() {
   const { id } = useParams();
   const [quote, setQuote] = useState<any>(null);
+  const [quoteLoading, setQuoteLoading] = useState(true);
+  const [quoteError, setQuoteError] = useState('');
   const [editingItem, setEditingItem] = useState<number | null>(null);
   const [editValues, setEditValues] = useState<any>({});
   const navigate = useNavigate();
@@ -36,38 +37,68 @@ export default function QuoteDetailPage() {
 
   const isOwnerOrAdmin = () => {
     if (!currentUser || !quote) return false;
-    return currentUser.role === 'ADMIN' || quote.created_by === currentUser.id;
+    return !!currentUser.is_admin || quote.created_by === currentUser.id;
+  };
+
+  const errorMessage = (err: any, fallback: string) => {
+    const detail = err.response?.data?.detail;
+    if (typeof detail === 'string') return detail;
+    const first = err.response?.data && Object.values(err.response.data).flat()[0];
+    return typeof first === 'string' ? first : fallback;
   };
 
   const openShareModal = async () => {
-    const [sh, us] = await Promise.all([
-      quoteService.listShares(Number(id)),
-      authService.getUsers(),
-    ]);
-    setShares(sh.data);
-    setUsers(us.data.results || us.data);
-    setShareOpen(true);
+    try {
+      const [sh, candidates] = await Promise.all([
+        quoteService.listShares(Number(id)),
+        quoteService.listShareCandidates(Number(id)),
+      ]);
+      setShares(sh.data);
+      setUsers(candidates.data);
+      setShareOpen(true);
+    } catch (err: any) {
+      message.error(errorMessage(err, '无法加载分享人员'));
+    }
   };
   const handleAddShare = async () => {
     if (!shareTarget) return;
     try {
       await quoteService.addShare(Number(id), shareTarget);
       message.success('已分享');
-      const { data } = await quoteService.listShares(Number(id));
-      setShares(data);
+      const [{ data: nextShares }, { data: nextCandidates }] = await Promise.all([
+        quoteService.listShares(Number(id)),
+        quoteService.listShareCandidates(Number(id)),
+      ]);
+      setShares(nextShares);
+      setUsers(nextCandidates);
       setShareTarget(null);
-    } catch { message.error('分享失败'); }
+    } catch (err: any) { message.error(errorMessage(err, '分享失败')); }
   };
   const handleRemoveShare = async (userId: number) => {
     try {
       await quoteService.removeShare(Number(id), userId);
-      const { data } = await quoteService.listShares(Number(id));
-      setShares(data);
-    } catch { message.error('取消失败'); }
+      const [{ data: nextShares }, { data: nextCandidates }] = await Promise.all([
+        quoteService.listShares(Number(id)),
+        quoteService.listShareCandidates(Number(id)),
+      ]);
+      setShares(nextShares);
+      setUsers(nextCandidates);
+    } catch (err: any) { message.error(errorMessage(err, '取消分享失败')); }
   };
 
-  const loadQuote = () => {
-    if (id) quoteService.getQuote(Number(id)).then(({ data }) => setQuote(data));
+  const loadQuote = async () => {
+    if (!id) return;
+    setQuoteLoading(true);
+    setQuoteError('');
+    try {
+      const { data } = await quoteService.getQuote(Number(id));
+      setQuote(data);
+    } catch (err: any) {
+      setQuote(null);
+      setQuoteError(errorMessage(err, '报价单加载失败，请稍后重试'));
+    } finally {
+      setQuoteLoading(false);
+    }
   };
 
   useEffect(() => { loadQuote(); }, [id]);
@@ -107,7 +138,7 @@ export default function QuoteDetailPage() {
       message.success('已更新');
       setEditingItem(null);
       loadQuote();
-    } catch { message.error('更新失败'); }
+    } catch (err: any) { message.error(errorMessage(err, '更新失败')); }
   };
 
   const deleteItem = async (itemId: number) => {
@@ -115,7 +146,7 @@ export default function QuoteDetailPage() {
       await quoteService.deleteItem(itemId);
       message.success('已删除');
       loadQuote();
-    } catch { message.error('删除失败'); }
+    } catch (err: any) { message.error(errorMessage(err, '删除失败')); }
   };
 
   const handleStatusChange = async (newStatus: string) => {
@@ -128,7 +159,23 @@ export default function QuoteDetailPage() {
     }
   };
 
-  if (!quote) return null;
+  if (quoteLoading) {
+    return <Spin size="large" style={{ display: 'block', margin: '100px auto' }} />;
+  }
+  if (quoteError) {
+    return (
+      <Alert
+        type="error"
+        showIcon
+        message="无法加载报价单"
+        description={quoteError}
+        action={<Button size="small" onClick={loadQuote}>重试</Button>}
+      />
+    );
+  }
+  if (!quote) return <Alert type="warning" showIcon message="报价单不存在" />;
+
+  const canWrite = isOwnerOrAdmin() && quote.status === 'DRAFT';
 
   const STATUS_COLOR: Record<string, string> = {
     DRAFT: 'default', SENT: 'processing', CONFIRMED: 'success', CANCELLED: 'error',
@@ -152,8 +199,8 @@ export default function QuoteDetailPage() {
       title: '配置',
       dataIndex: 'config_name',
       ellipsis: true,
-      render: (text: string, record: any) => (
-        <Tooltip title={record.config_attributes ? JSON.stringify(record.config_attributes) : ''}>
+      render: (text: string) => (
+        <Tooltip title={text || '无配置'}>
           <Text>{text || '-'}</Text>
         </Tooltip>
       ),
@@ -173,7 +220,7 @@ export default function QuoteDetailPage() {
     {
       title: '操作',
       width: 120,
-      render: (_: any, record: any) => editingItem === record.id ? (
+      render: (_: any, record: any) => !canWrite ? <Text type="secondary">只读</Text> : editingItem === record.id ? (
         <Space size="small">
           <Button size="small" type="primary" onClick={() => saveEdit(record.id)}>保存</Button>
           <Button size="small" onClick={() => setEditingItem(null)}>取消</Button>
@@ -229,7 +276,7 @@ export default function QuoteDetailPage() {
           <Descriptions.Item label="状态">
             <Space>
               <Tag color={STATUS_COLOR[quote.status]}>{STATUS_LABEL[quote.status] || quote.status}</Tag>
-              {(VALID_TRANSITIONS[quote.status] || []).length > 0 && (
+              {isOwnerOrAdmin() && (VALID_TRANSITIONS[quote.status] || []).length > 0 && (
                 <Select
                   size="small"
                   placeholder="变更状态"
@@ -257,12 +304,12 @@ export default function QuoteDetailPage() {
       <Card
         title="报价明细"
         style={{ marginTop: 16 }}
-        extra={
+        extra={canWrite ? (
           <Button type="primary" icon={<PlusOutlined />}
             onClick={() => navigate(`/catalog?quoteId=${id}`)}>
             新增明细
           </Button>
-        }
+        ) : null}
       >
         <Table
           dataSource={quote.items}

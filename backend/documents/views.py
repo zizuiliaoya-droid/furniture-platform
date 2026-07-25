@@ -9,7 +9,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
-from auth_app.permissions import IsAdminRole
+from auth_app.permissions import HasModulePermission, require_module_permission
 from common.file_storage import FileStorageService
 from .models import Document, DocumentFolder
 from .serializers import (
@@ -22,11 +22,8 @@ from .serializers import (
 class DocumentFolderViewSet(ModelViewSet):
     queryset = DocumentFolder.objects.all()
     serializer_class = DocumentFolderSerializer
-
-    def get_permissions(self):
-        if self.action in ('create', 'destroy'):
-            return [IsAuthenticated(), IsAdminRole()]
-        return [IsAuthenticated()]
+    permission_classes = [IsAuthenticated, HasModulePermission]
+    module_name = 'DOCUMENT'
 
     def perform_destroy(self, instance):
         if instance.documents.exists() or instance.children.exists():
@@ -44,7 +41,8 @@ class DocumentFolderViewSet(ModelViewSet):
 
 class DocumentViewSet(ModelViewSet):
     serializer_class = DocumentSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasModulePermission]
+    module_name = 'DOCUMENT'
 
     def get_queryset(self):
         qs = Document.objects.select_related('folder', 'created_by')
@@ -62,14 +60,10 @@ class DocumentViewSet(ModelViewSet):
             qs = qs.filter(name__icontains=search)
         return qs
 
-    def get_permissions(self):
-        if self.action in ('destroy',):
-            return [IsAuthenticated(), IsAdminRole()]
-        return [IsAuthenticated()]
-
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated, IsAdminRole])
+@permission_classes([IsAuthenticated])
+@require_module_permission('DOCUMENT', 'create')
 def upload_document(request):
     file = request.FILES.get('file')
     if not file:
@@ -91,6 +85,7 @@ def upload_document(request):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
+@require_module_permission('DOCUMENT', 'view')
 def download_document(request, pk):
     try:
         doc = Document.objects.get(pk=pk)
@@ -106,6 +101,7 @@ def download_document(request, pk):
 
 @api_view(['PATCH'])
 @permission_classes([IsAuthenticated])
+@require_module_permission('DOCUMENT', 'update')
 def update_document_tags(request, pk):
     try:
         doc = Document.objects.get(pk=pk)
@@ -119,7 +115,8 @@ def update_document_tags(request, pk):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated, IsAdminRole])
+@permission_classes([IsAuthenticated])
+@require_module_permission('DOCUMENT', 'create')
 def create_rich_text_document(request):
     """POST /api/documents/rich-text/ — 创建富文本文档（培训资料等）"""
     serializer = RichTextDocumentCreateSerializer(data=request.data)
@@ -141,7 +138,8 @@ def create_rich_text_document(request):
 
 
 @api_view(['PATCH'])
-@permission_classes([IsAuthenticated, IsAdminRole])
+@permission_classes([IsAuthenticated])
+@require_module_permission('DOCUMENT', 'update')
 def update_rich_text_document(request, pk):
     """PATCH /api/documents/{id}/rich-text/ — 更新富文本内容"""
     try:

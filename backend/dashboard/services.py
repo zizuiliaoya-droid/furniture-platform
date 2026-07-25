@@ -1,9 +1,11 @@
 """Dashboard services."""
 from datetime import timedelta
-from django.db.models import Count
+
+from django.db.models import Count, Q
 from django.db.models.functions import TruncDate
 from django.utils import timezone
 
+from auth_app.permissions import has_module_permission
 from cases.models import Case
 from documents.models import Document
 from products.models import Product
@@ -12,34 +14,43 @@ from quotes.models import Quote
 
 class DashboardService:
     @staticmethod
-    def get_stats() -> dict:
+    def get_stats(user) -> dict:
         now = timezone.now()
         month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         thirty_days_ago = now - timedelta(days=30)
 
+        products = (Product.objects.filter(is_active=True)
+                    if has_module_permission(user, 'PRODUCT', 'view') else Product.objects.none())
+        cases = Case.objects.all() if has_module_permission(user, 'CASE', 'view') else Case.objects.none()
+        documents = (Document.objects.all()
+                     if has_module_permission(user, 'DOCUMENT', 'view') else Document.objects.none())
+        quotes = Quote.objects.all() if has_module_permission(user, 'QUOTE', 'view') else Quote.objects.none()
+        if not getattr(user, 'is_admin', False):
+            quotes = quotes.filter(Q(created_by=user) | Q(shares__shared_with=user)).distinct()
+
         totals = {
-            'product_count': Product.objects.filter(is_active=True).count(),
-            'case_count': Case.objects.count(),
-            'quote_count': Quote.objects.count(),
-            'document_count': Document.objects.count(),
+            'product_count': products.count(),
+            'case_count': cases.count(),
+            'quote_count': quotes.count(),
+            'document_count': documents.count(),
         }
         monthly = {
-            'new_products': Product.objects.filter(created_at__gte=month_start, is_active=True).count(),
-            'new_cases': Case.objects.filter(created_at__gte=month_start).count(),
-            'new_quotes': Quote.objects.filter(created_at__gte=month_start).count(),
+            'new_products': products.filter(created_at__gte=month_start).count(),
+            'new_cases': cases.filter(created_at__gte=month_start).count(),
+            'new_quotes': quotes.filter(created_at__gte=month_start).count(),
         }
         daily_products = dict(
-            Product.objects.filter(created_at__gte=thirty_days_ago, is_active=True)
+            products.filter(created_at__gte=thirty_days_ago)
             .annotate(date=TruncDate('created_at')).values('date')
             .annotate(count=Count('id')).values_list('date', 'count')
         )
         daily_cases = dict(
-            Case.objects.filter(created_at__gte=thirty_days_ago)
+            cases.filter(created_at__gte=thirty_days_ago)
             .annotate(date=TruncDate('created_at')).values('date')
             .annotate(count=Count('id')).values_list('date', 'count')
         )
         daily_quotes = dict(
-            Quote.objects.filter(created_at__gte=thirty_days_ago)
+            quotes.filter(created_at__gte=thirty_days_ago)
             .annotate(date=TruncDate('created_at')).values('date')
             .annotate(count=Count('id')).values_list('date', 'count')
         )
@@ -53,15 +64,15 @@ class DashboardService:
                 'quotes': daily_quotes.get(date, 0),
             })
 
-        recent_quotes = Quote.objects.select_related('created_by').order_by('-updated_at')[:10]
+        recent_quotes = quotes.select_related('created_by').order_by('-updated_at')[:10]
         recent_activities = [
             {
-                'id': q.id, 'title': q.title,
-                'customer_name': q.customer_name,
-                'status': q.status,
-                'updated_at': q.updated_at.isoformat(),
+                'id': quote.id, 'title': quote.title,
+                'customer_name': quote.customer_name,
+                'status': quote.status,
+                'updated_at': quote.updated_at.isoformat(),
             }
-            for q in recent_quotes
+            for quote in recent_quotes
         ]
 
         return {

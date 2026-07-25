@@ -187,6 +187,24 @@ class ProductCreateUpdateSerializer(serializers.ModelSerializer):
         return instance
 
 
+class ProductCompositeCreateSerializer(serializers.Serializer):
+    """同一事务创建产品、配置维度、默认组合和价格矩阵。图片通过 multipart 单独传入。"""
+    product = ProductCreateUpdateSerializer()
+    dimensions = ProductConfigDimensionWriteSerializer(many=True, required=False, default=list)
+    presets = ProductConfigPresetSerializer(many=True, required=False, default=list)
+    price_matrix = serializers.ListField(child=serializers.DictField(), required=False, default=list)
+
+    def validate(self, attrs):
+        dimensions = attrs.get('dimensions', [])
+        keys = [d['dimension_key'] for d in dimensions]
+        if len(keys) != len(set(keys)):
+            raise serializers.ValidationError({'dimensions': '配置维度键不能重复'})
+        defaults = [p for p in attrs.get('presets', []) if p.get('is_default')]
+        if len(defaults) > 1:
+            raise serializers.ValidationError({'presets': '每个产品最多一个默认配置'})
+        return attrs
+
+
 # ─── Calculate Price Request ──────────────────────────────────────────────────
 
 class CalculatePriceSerializer(serializers.Serializer):

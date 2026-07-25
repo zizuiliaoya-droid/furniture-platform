@@ -5,6 +5,14 @@ export const productService = {
   getProducts: (params?: any) => api.get('/api/products/', { params }),
   getProduct: (id: number) => api.get(`/api/products/${id}/`),
   createProduct: (data: any) => api.post('/api/products/', data),
+  createComposite: (payload: any, images: File[] = []) => {
+    const formData = new FormData();
+    formData.append('payload', JSON.stringify(payload));
+    images.forEach((image) => formData.append('images', image));
+    return api.post('/api/products/create-composite/', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
   updateProduct: (id: number, data: any) => api.patch(`/api/products/${id}/`, data),
   deleteProduct: (id: number, hard = false) => api.delete(`/api/products/${id}/${hard ? '?hard=true' : ''}`),
   reactivateProduct: (id: number) => api.post(`/api/products/${id}/reactivate/`),

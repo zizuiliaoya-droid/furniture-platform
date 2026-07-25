@@ -1,9 +1,12 @@
 """Sharing views."""
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
+
+from auth_app.permissions import has_module_permission
 
 from .models import ShareLink
 from .serializers import (
@@ -17,15 +20,33 @@ class ShareLinkViewSet(ModelViewSet):
     serializer_class = ShareLinkSerializer
     permission_classes = [IsAuthenticated]
     http_method_names = ['get', 'post', 'delete']
+    CONTENT_MODULE = {
+        'PRODUCT': 'PRODUCT', 'CASE': 'CASE', 'QUOTE': 'QUOTE',
+        'CATALOG': 'CATALOG', 'BATCH': 'CATALOG',
+    }
+
+    def _assert_share_permission(self, content_type):
+        module = self.CONTENT_MODULE.get(content_type)
+        if not module or not has_module_permission(self.request.user, module, 'share'):
+            raise PermissionDenied('缺少对应模块的分享权限')
 
     def get_queryset(self):
-        return ShareLink.objects.filter(created_by=self.request.user)
+        allowed_types = [
+            content_type for content_type, module in self.CONTENT_MODULE.items()
+            if has_module_permission(self.request.user, module, 'share')
+        ]
+        return ShareLink.objects.filter(created_by=self.request.user, content_type__in=allowed_types)
 
     def create(self, request, *args, **kwargs):
         serializer = ShareLinkCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        self._assert_share_permission(serializer.validated_data['content_type'])
         link = ShareService.create_link(serializer.validated_data, request.user)
         return Response(ShareLinkSerializer(link).data, status=status.HTTP_201_CREATED)
+
+    def perform_destroy(self, instance):
+        self._assert_share_permission(instance.content_type)
+        instance.delete()
 
 
 @api_view(['GET'])

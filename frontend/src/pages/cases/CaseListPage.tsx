@@ -24,7 +24,7 @@ export default function CaseListPage() {
   const [loading, setLoading] = useState(false);
   const [selectedIndustry, setSelectedIndustry] = useState<string | null>(null);
   const navigate = useNavigate();
-  const isAdmin = useAuthStore((s) => s.user?.role === 'ADMIN');
+  const isAdmin = useAuthStore((s) => !!s.user?.is_admin);
 
   const fetchCases = async (params?: any) => {
     setLoading(true);

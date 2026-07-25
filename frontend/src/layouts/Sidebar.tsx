@@ -11,7 +11,7 @@ export default function Sidebar() {
   const navigate = useNavigate();
   const location = useLocation();
   const user = useAuthStore((s) => s.user);
-  const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN';
+  const isAdmin = !!user?.is_admin;
 
   const items = [
     { key: '/', icon: <HomeOutlined />, label: '首页' },

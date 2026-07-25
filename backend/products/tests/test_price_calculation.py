@@ -2,7 +2,9 @@
 from decimal import Decimal
 
 import pytest
+from rest_framework.test import APIClient
 
+from auth_app.models import RolePermission
 from products.services import PriceCalculationService
 
 
@@ -109,3 +111,59 @@ class TestCascadeConstraint:
         )
         assert result['valid'] is True
         assert result['price'] == Decimal('3000')
+
+
+@pytest.mark.django_db
+class TestConditionalRequiredAndFixedPrice:
+    def test_invisible_required_child_is_not_missing(self, product_cascade):
+        from products.models import ProductPriceMatrix
+
+        child = product_cascade.config_dimensions.get(dimension_key='backrest_series')
+        child.is_required = True
+        child.save(update_fields=['is_required'])
+        config = {'backrest_material': 'leather'}
+        ProductPriceMatrix.objects.create(
+            product=product_cascade,
+            config_signature=ProductPriceMatrix.build_signature(config),
+            config_attributes=config,
+            price=Decimal('2800'),
+        )
+        result = PriceCalculationService.calculate(product_cascade, config)
+        assert result['valid'] is True
+        assert result['price'] == Decimal('2800')
+
+    def test_product_without_dimensions_uses_fixed_price(self, admin_user):
+        from products.models import Product
+
+        product = Product.objects.create(
+            name='固定价产品', code='FIXED-01', category_l1='ACCESSORIES',
+            origin='DOMESTIC', pricing_mode='MATRIX', base_price=Decimal('999'),
+            created_by=admin_user, is_active=True,
+        )
+        result = PriceCalculationService.calculate(product, {})
+        assert result['valid'] is True
+        assert result['price'] == Decimal('999')
+
+
+@pytest.mark.django_db
+class TestCalculatePricePermission:
+    def test_view_permission_is_sufficient_for_post_calculation(self, staff_user, product_matrix):
+        RolePermission.objects.create(
+            role='STAFF', module='PRODUCT', action='view', allowed=True)
+        client = APIClient()
+        client.force_authenticate(staff_user)
+        response = client.post(
+            f'/api/products/{product_matrix.id}/calculate-price/',
+            {'selections': {'color': 'red', 'size': 'L'}}, format='json')
+        assert response.status_code == 200, response.content
+        assert response.data['price'] == '2580.00'
+
+    def test_create_without_view_cannot_calculate(self, staff_user, product_matrix):
+        RolePermission.objects.create(
+            role='STAFF', module='PRODUCT', action='create', allowed=True)
+        client = APIClient()
+        client.force_authenticate(staff_user)
+        response = client.post(
+            f'/api/products/{product_matrix.id}/calculate-price/',
+            {'selections': {'color': 'red', 'size': 'L'}}, format='json')
+        assert response.status_code == 403

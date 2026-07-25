@@ -19,9 +19,20 @@ export default function PermissionManagementPage() {
   const [data, setData] = useState<any>(null);
   const [dirty, setDirty] = useState<Record<string, boolean>>({});
   const [saving, setSaving] = useState(false);
+  const [activeRole, setActiveRole] = useState('DEPT_MANAGER');
 
   const load = () => authService.getPermissionMatrix().then(({ data }) => { setData(data); setDirty({}); });
   useEffect(() => { load(); }, []);
+  const dirtyCount = Object.keys(dirty).length;
+  useEffect(() => {
+    const warnBeforeLeave = (event: BeforeUnloadEvent) => {
+      if (!dirtyCount) return;
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warnBeforeLeave);
+    return () => window.removeEventListener('beforeunload', warnBeforeLeave);
+  }, [dirtyCount]);
 
   if (!data) return null;
 
@@ -45,7 +56,11 @@ export default function PermissionManagementPage() {
       await authService.updatePermissionMatrix(items);
       message.success('权限已保存');
       load();
-    } catch { message.error('保存失败'); }
+    } catch (err: any) {
+      const detail = err.response?.data?.detail;
+      const first = err.response?.data && Object.values(err.response.data).flat()[0];
+      message.error(typeof detail === 'string' ? detail : (typeof first === 'string' ? first : '保存失败'));
+    }
     finally { setSaving(false); }
   };
 
@@ -85,11 +100,23 @@ export default function PermissionManagementPage() {
   return (
     <div>
       <Space style={{ marginBottom: 16, justifyContent: 'space-between', width: '100%' }}>
-        <Title level={4} style={{ margin: 0 }}>权限管理</Title>
-        <Button type="primary" loading={saving} onClick={handleSave}>保存</Button>
+        <Space>
+          <Title level={4} style={{ margin: 0 }}>权限管理</Title>
+          {dirtyCount > 0 && <Tag color="orange">有 {dirtyCount} 项未保存修改</Tag>}
+        </Space>
+        <Button type="primary" loading={saving} disabled={!dirtyCount} onClick={handleSave}>保存</Button>
       </Space>
       <Text type="secondary">按角色配置"模块 × 操作"权限矩阵。管理员/超级管理员默认拥有全部权限。</Text>
-      <Tabs items={roleTabs} style={{ marginTop: 12 }} />
+      <Tabs
+        activeKey={activeRole}
+        onChange={(nextRole) => {
+          if (!dirtyCount || window.confirm('当前有未保存修改，切换角色后修改仍会保留。是否继续？')) {
+            setActiveRole(nextRole);
+          }
+        }}
+        items={roleTabs}
+        style={{ marginTop: 12 }}
+      />
     </div>
   );
 }

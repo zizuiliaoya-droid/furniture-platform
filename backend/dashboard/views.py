@@ -9,5 +9,5 @@ from .services import DashboardService
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def dashboard_stats_view(request):
-    stats = DashboardService.get_stats()
+    stats = DashboardService.get_stats(request.user)
     return Response(stats)

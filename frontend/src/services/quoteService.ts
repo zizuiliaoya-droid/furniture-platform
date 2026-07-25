@@ -5,7 +5,6 @@ export interface AddItemFromProductPayload {
   selections: Record<string, string>;
   image_id?: number | null;
   quantity?: number;
-  discount?: number;
 }
 
 export const quoteService = {
@@ -27,8 +26,13 @@ export const quoteService = {
   addItemFromProduct: (quoteId: number, payload: AddItemFromProductPayload) =>
     api.post(`/api/quotes/${quoteId}/items/from-product/`, payload),
 
+  /** 改配置时原位更新报价明细，不创建重复行 */
+  updateItemFromProduct: (itemId: number, payload: AddItemFromProductPayload) =>
+    api.patch(`/api/quotes/items/${itemId}/from-product/`, payload),
+
   // QT-7/8 分享
   listShares: (quoteId: number) => api.get(`/api/quotes/${quoteId}/shares/`),
+  listShareCandidates: (quoteId: number) => api.get(`/api/quotes/${quoteId}/share-candidates/`),
   addShare: (quoteId: number, user_id: number) =>
     api.post(`/api/quotes/${quoteId}/shares/`, { user_id }),
   removeShare: (quoteId: number, userId: number) =>

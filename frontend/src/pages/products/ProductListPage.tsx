@@ -19,7 +19,7 @@ function downloadBlob(data: Blob, filename: string) {
 export default function ProductListPage() {
   const navigate = useNavigate();
   const { products, total, loading, page, pageSize, filters, fetchProducts, setFilters, resetFilters, setPage } = useProductStore();
-  const isAdmin = useAuthStore((s) => s.user?.role === 'ADMIN');
+  const isAdmin = !!useAuthStore((s) => s.user?.is_admin);
   const [categoryOptions, setCategoryOptions] = useState<any>(null);
   const [brands, setBrands] = useState<any[]>([]);
   const [batchOpen, setBatchOpen] = useState(false);
@@ -199,8 +199,8 @@ export default function ProductListPage() {
       >
         <Space direction="vertical" style={{ width: '100%' }} size="middle">
           <Button icon={<DownloadOutlined />} onClick={() =>
-            productService.downloadBatchTemplate().then(({ data }) => downloadBlob(data, 'product_batch_template.xlsx'))
-          }>下载导入模板（长格式：产品 + 配置参数）</Button>
+            productService.downloadBatchTemplate().then(({ data }) => downloadBlob(data, 'product_customer_template.xlsx'))
+          }>下载客户自助模板（每产品一个配置 Sheet）</Button>
           <Upload
             accept=".xlsx"
             maxCount={1}
@@ -212,17 +212,26 @@ export default function ProductListPage() {
           {batchFile && <Text type="secondary">已选择：{batchFile.name}</Text>}
           {batchPreview && (
             <div style={{ background: '#f6ffed', padding: 12, borderRadius: 4 }}>
-              <Text>共解析 <Text strong>{batchPreview.product_count}</Text> 个产品</Text>
+              <Text>格式：{batchPreview.format === 'horizontal' ? '客户横向模板' : '旧版长格式'}；共解析 <Text strong>{batchPreview.product_count}</Text> 个产品</Text>
               {(batchPreview.products || []).map((p: any) => (
-                <div key={p.name} style={{ marginTop: 4 }}>
+                <div key={`${p.sheet_name || ''}-${p.code || p.name}`} style={{ marginTop: 4 }}>
                   <Text type="secondary">
-                    {p.name}（{p.code || '无编号'}）：{p.dimension_count} 维度 / {p.option_count} 选项 / {p.preset_count} 款式
+                    {p.sheet_name ? `[${p.sheet_name}] ` : ''}{p.name}（{p.code || '无编号'}）：
+                    {p.dimension_count} 维度 / {p.option_count} 选项 / {p.preset_count} 预设 / {p.price_count || 0} 组合价格
                   </Text>
+                  {(p.price_count || 0) === 0 && batchPreview.format === 'horizontal' && (
+                    <Tag color="orange" style={{ marginLeft: 8 }}>可导入配置，但暂无价格，不能加入报价单</Tag>
+                  )}
                 </div>
               ))}
+              {batchPreview.warnings?.length > 0 && (
+                <div style={{ color: '#ad6800', marginTop: 8 }}>
+                  {batchPreview.warnings.map((warning: string, index: number) => <div key={index}>警告：{warning}</div>)}
+                </div>
+              )}
               {batchPreview.errors?.length > 0 && (
                 <div style={{ color: 'red', marginTop: 8 }}>
-                  {batchPreview.errors.map((e: string, i: number) => <div key={i}>{e}</div>)}
+                  {batchPreview.errors.map((error: string, index: number) => <div key={index}>错误：{error}</div>)}
                 </div>
               )}
             </div>
