@@ -13,7 +13,7 @@ function Assert-Status {
     )
 
     try {
-        $response = Invoke-WebRequest -Uri $Uri -MaximumRedirection 5 -TimeoutSec 30
+        $response = Invoke-WebRequest -UseBasicParsing -Uri $Uri -MaximumRedirection 5 -TimeoutSec 30
         $status = [int]$response.StatusCode
     }
     catch {
