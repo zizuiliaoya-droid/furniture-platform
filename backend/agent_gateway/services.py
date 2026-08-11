@@ -114,6 +114,46 @@ CAPABILITIES = (
         path='/api/agent/capabilities/',
         mode='read',
     ),
+    AgentCapability(
+        name='product_search',
+        description='按关键词、分类、品牌、产地、货期和价格范围搜索在售产品',
+        method='GET',
+        path='/api/agent/products/search/',
+        mode='read',
+        required_permission='CATALOG.view',
+    ),
+    AgentCapability(
+        name='product_detail',
+        description='查询单个产品、图片、配置维度和默认组合',
+        method='GET',
+        path='/api/agent/products/{product_id}/',
+        mode='read',
+        required_permission='PRODUCT.view',
+    ),
+    AgentCapability(
+        name='price_calculate',
+        description='使用后端确定性定价服务验证配置并计算价格',
+        method='POST',
+        path='/api/agent/products/{product_id}/price/',
+        mode='read',
+        required_permission='PRODUCT.view',
+    ),
+    AgentCapability(
+        name='document_search',
+        description='检索内部设计、培训和资质资料，返回受限摘要和页面链接',
+        method='GET',
+        path='/api/agent/documents/search/',
+        mode='read',
+        required_permission='DOCUMENT.view',
+    ),
+    AgentCapability(
+        name='case_search',
+        description='按关键词和行业检索案例及关联产品',
+        method='GET',
+        path='/api/agent/cases/search/',
+        mode='read',
+        required_permission='CASE.view',
+    ),
 )
 
 
@@ -132,3 +172,25 @@ def visible_capabilities(user):
 
 def public_web_url():
     return str(getattr(settings, 'PUBLIC_WEB_URL', 'http://localhost')).rstrip('/')
+
+
+def require_agent_permission(
+    *, request, request_id, started_at, action, module, permission,
+    input_data=None,
+):
+    """Enforce the existing permission matrix and audit authenticated denial."""
+    from auth_app.permissions import has_module_permission
+    from rest_framework.exceptions import PermissionDenied
+
+    if has_module_permission(request.user, module, permission):
+        return
+    record_agent_audit(
+        request=request,
+        request_id=request_id,
+        action=action,
+        status=AgentActionAudit.Status.DENIED,
+        started_at=started_at,
+        input_data=input_data or {},
+        output_data={'detail': f'缺少{module}.{permission}权限'},
+    )
+    raise PermissionDenied(f'缺少{module}.{permission}权限')
