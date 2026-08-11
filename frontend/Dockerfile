@@ -1,7 +1,7 @@
 FROM node:20-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json* ./
-RUN npm install
+RUN npm ci --ignore-scripts
 COPY . .
 RUN npm run build
 
@@ -15,4 +15,6 @@ ENV BACKEND_URL=http://backend:8000 \
     BACKEND_HOST=backend \
     NGINX_ENVSUBST_FILTER=BACKEND
 EXPOSE 80
+HEALTHCHECK --interval=15s --timeout=5s --retries=5 \
+  CMD wget --quiet --tries=1 --spider http://127.0.0.1/healthz || exit 1
 CMD ["nginx", "-g", "daemon off;"]

@@ -12,8 +12,12 @@ django.setup()
 
 from auth_app.models import User
 
-username = os.environ.get('ADMIN_USERNAME', 'admin')
-password = os.environ.get('ADMIN_PASSWORD', 'admin123456')
+username = os.environ.get('ADMIN_USERNAME', '').strip()
+password = os.environ.get('ADMIN_PASSWORD', '')
+
+if not username or not password:
+    print('ADMIN_USERNAME/ADMIN_PASSWORD not set; skipping bootstrap admin creation.')
+    raise SystemExit(0)
 
 if not User.objects.filter(username=username).exists():
     User.objects.create_superuser(

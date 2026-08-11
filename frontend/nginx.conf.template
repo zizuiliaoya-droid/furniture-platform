@@ -5,6 +5,12 @@ server {
     index index.html;
     client_max_body_size 50M;
 
+    location = /healthz {
+        access_log off;
+        add_header Content-Type text/plain;
+        return 200 "ok\n";
+    }
+
     # SPA 前端路由
     location / {
         try_files $uri $uri/ /index.html;

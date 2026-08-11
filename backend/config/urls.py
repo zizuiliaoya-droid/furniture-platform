@@ -4,7 +4,10 @@ from django.contrib import admin
 from django.urls import include, path, re_path
 from django.views.static import serve
 
+from common.views import health_view
+
 urlpatterns = [
+    path('api/health/', health_view, name='health'),
     path('admin/', admin.site.urls),
     path('api/auth/', include('auth_app.urls')),
     path('api/', include('products.urls')),

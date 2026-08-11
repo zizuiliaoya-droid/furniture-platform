@@ -24,4 +24,7 @@ RUN python manage.py collectstatic --noinput 2>/dev/null || true
 
 EXPOSE 8000
 
+HEALTHCHECK --interval=15s --timeout=6s --start-period=30s --retries=5 \
+    CMD python -c "import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:' + os.environ.get('PORT', '8000') + '/api/health/', timeout=5)" || exit 1
+
 ENTRYPOINT ["./entrypoint.sh"]

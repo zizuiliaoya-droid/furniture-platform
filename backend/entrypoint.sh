@@ -7,7 +7,7 @@ python manage.py migrate --noinput
 echo "Collecting static files..."
 python manage.py collectstatic --noinput
 
-echo "Creating admin user..."
+echo "Provisioning bootstrap admin when configured..."
 python scripts/create_admin.py
 
 # 可选：初始化演示数据（设置 SEED_DEMO=true 时执行，幂等）

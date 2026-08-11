@@ -32,3 +32,17 @@ $QWENPAW_WORKING_DIR/workspaces/<agent_id>/skills/
 python -m pytest paw/tests -q
 python paw/skills/furniture-system/scripts/furniture_api.py --help
 ```
+
+## Docker 启动
+
+复制环境模板并填写专用平台 Token、Console 强密码和至少一个模型供应商密钥：
+
+```powershell
+Copy-Item paw/.env.example paw/.env
+docker compose --env-file paw/.env -f paw/docker-compose.yml up -d
+```
+
+默认只监听 `127.0.0.1:8088`。如果必须通过公网访问 Console，将
+`QWENPAW_BIND_ADDRESS` 改为服务器网卡地址，并继续保留登录认证；更推荐放在
+HTTPS 反向代理或 VPN 后面。首次启动后访问 `http://127.0.0.1:8088/`，确认模型、
+默认 Agent 和 6 个家具 Skill 均已启用。

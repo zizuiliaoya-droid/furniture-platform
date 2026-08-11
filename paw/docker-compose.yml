@@ -1,0 +1,25 @@
+services:
+  qwenpaw:
+    image: agentscope/qwenpaw:latest
+    restart: unless-stopped
+    ports:
+      - "${QWENPAW_BIND_ADDRESS:-127.0.0.1}:8088:8088"
+    environment:
+      QWENPAW_AUTH_ENABLED: "true"
+      QWENPAW_AUTH_USERNAME: ${QWENPAW_AUTH_USERNAME:?set QWENPAW_AUTH_USERNAME}
+      QWENPAW_AUTH_PASSWORD: ${QWENPAW_AUTH_PASSWORD:?set QWENPAW_AUTH_PASSWORD}
+      QWENPAW_SKILL_SCAN_MODE: block
+      FURNITURE_API_URL: ${FURNITURE_API_URL:-https://furniture-zk.zeabur.app}
+      FURNITURE_API_TOKEN: ${FURNITURE_API_TOKEN:?set FURNITURE_API_TOKEN}
+      FURNITURE_API_TIMEOUT: ${FURNITURE_API_TIMEOUT:-30}
+      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
+    volumes:
+      - qwenpaw_data:/app/working
+      - qwenpaw_secrets:/app/working.secret
+      - qwenpaw_backups:/app/working.backups
+      - ./skills:/app/working/workspaces/default/skills:ro
+
+volumes:
+  qwenpaw_data:
+  qwenpaw_secrets:
+  qwenpaw_backups:
