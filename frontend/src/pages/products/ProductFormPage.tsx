@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import {
-  Button, Card, Col, Divider, Form, Image, Input, InputNumber, message, Popconfirm,
+  Alert, Button, Card, Checkbox, Col, Divider, Form, Image, Input, InputNumber, message, Modal, Popconfirm,
   Row, Select, Space, Table, Tabs, Tag, Typography, Upload,
 } from 'antd';
-import { DeleteOutlined, InboxOutlined, PlusOutlined, StarOutlined, UploadOutlined } from '@ant-design/icons';
+import { DeleteOutlined, EditOutlined, InboxOutlined, PlusOutlined, StarOutlined, UploadOutlined } from '@ant-design/icons';
 import { useNavigate, useParams } from 'react-router-dom';
 import { productService } from '../../services/productService';
 import { brandService } from '../../services/brandService';
@@ -11,6 +11,20 @@ import { brandService } from '../../services/brandService';
 const { Title, Text } = Typography;
 const { TextArea } = Input;
 const { Dragger } = Upload;
+
+const parseOptionsText = (value = '') => value
+  .split(/[,，;；\n]+/)
+  .map((token: string) => token.trim())
+  .filter(Boolean)
+  .map((token: string) => {
+    const [key, ...labelParts] = token.split('|');
+    return { key: key.trim(), label: (labelParts.join('|').trim() || key.trim()) };
+  });
+
+const formatOptionsText = (options: any[] = []) => options
+  .map((option) => option.label && option.label !== option.key
+    ? `${option.key}|${option.label}` : option.key)
+  .join(', ');
 
 export default function ProductFormPage() {
   const { id } = useParams();
@@ -26,6 +40,17 @@ export default function ProductFormPage() {
   const [dimensions, setDimensions] = useState<any[]>([]);
   const [configExcelPreview, setConfigExcelPreview] = useState<any>(null);
   const [configExcelFile, setConfigExcelFile] = useState<File | null>(null);
+  const [configMapping, setConfigMapping] = useState<any>({});
+  const [replaceDimensions, setReplaceDimensions] = useState(false);
+  const [replacePrices, setReplacePrices] = useState(true);
+  const [dimensionModalOpen, setDimensionModalOpen] = useState(false);
+  const [editingDimension, setEditingDimension] = useState<any>(null);
+  const [dimensionImpact, setDimensionImpact] = useState<any>(null);
+  const [dimensionForm] = Form.useForm();
+
+  const reloadDimensions = () => {
+    if (id) productService.getConfigDimensions(Number(id)).then(({ data }) => setDimensions(data));
+  };
 
   // 新建模式下暂存（一页提交）：待上传图片 + 待创建维度
   const [pendingImages, setPendingImages] = useState<File[]>([]);
@@ -108,14 +133,20 @@ export default function ProductFormPage() {
     form.setFieldValue('category_l2', '');
   };
 
-  // 配置 Excel 上传
-  const handleConfigExcelUpload = async (file: File) => {
+  // 配置 Excel 上传：支持标准模板、自制横向/纵向/组合价格表及人工映射。
+  const handleConfigExcelUpload = async (file: File, mapping: any = {}) => {
     if (!id) return;
     try {
-      const { data } = await productService.uploadConfigExcel(Number(id), file, false);
+      const { data } = await productService.uploadConfigExcel(
+        Number(id), file, false, { mapping });
       setConfigExcelPreview(data);
       setConfigExcelFile(file);
-      message.info(`解析完成：${data.dimensions_count} 个维度，${data.price_entries_count} 条价格`);
+      setConfigMapping(mapping);
+      if (data.needs_mapping) {
+        message.info('请先选择数据 Sheet 和结构，再重新解析');
+      } else {
+        message.info(`解析完成：${data.dimensions_count} 个维度，${data.price_entries_count} 条价格`);
+      }
     } catch (err: any) {
       message.error(err.response?.data?.detail || '解析失败');
     }
@@ -128,14 +159,19 @@ export default function ProductFormPage() {
     }
     try {
       message.loading({ content: '正在导入...', key: 'confirm-import' });
-      await productService.uploadConfigExcel(Number(id), configExcelFile, true);
+      await productService.uploadConfigExcel(Number(id), configExcelFile, true, {
+        mapping: configMapping, replaceDimensions, replacePrices,
+      });
       message.success({ content: '配置导入成功', key: 'confirm-import' });
       setConfigExcelPreview(null);
       setConfigExcelFile(null);
-      // 刷新维度
-      productService.getConfigDimensions(Number(id)).then(({ data }) => setDimensions(data));
+      setConfigMapping({});
+      setReplaceDimensions(false);
+      reloadDimensions();
     } catch (err: any) {
-      message.error({ content: err.response?.data?.detail || '导入失败', key: 'confirm-import' });
+      const errors = err.response?.data?.errors;
+      const detail = errors?.length ? errors.join('；') : err.response?.data?.detail;
+      message.error({ content: detail || '导入失败', key: 'confirm-import' });
     }
   };
 
@@ -144,17 +180,16 @@ export default function ProductFormPage() {
   const handleAddDimension = async () => {
     try {
       const values = await newDimForm.validateFields();
-      const options = (values.options_text || '').split(',').map((o: string) => ({ key: o.trim(), label: o.trim() })).filter((o: any) => o.key);
+      const options = parseOptionsText(values.options_text);
       const payload = {
-        dimension_key: values.dimension_key,
-        dimension_label: values.dimension_label,
+        dimension_key: values.dimension_key.trim(),
+        dimension_label: values.dimension_label.trim(),
         options,
-        parent_dimension: values.parent_dimension || '',
+        parent_dimension: values.parent_dimension?.trim() || '',
         is_required: values.is_required ?? true,
         sort_order: dimensions.length,
       };
       if (!id) {
-        // 新建模式：暂存到本地，随产品一起提交
         setPendingDims((prev) => [...prev, payload]);
         newDimForm.resetFields();
         message.success('已添加（保存产品时一并创建）');
@@ -163,13 +198,84 @@ export default function ProductFormPage() {
       await productService.addConfigDimension(Number(id), payload);
       message.success('维度添加成功');
       newDimForm.resetFields();
-      productService.getConfigDimensions(Number(id)).then(({ data }) => setDimensions(data));
+      reloadDimensions();
     } catch (err: any) {
       message.error(err.response?.data?.detail || '添加失败');
     }
   };
 
+  const openDimensionEditor = async (dimension: any) => {
+    if (!id) return;
+    try {
+      const { data: impact } = await productService.getConfigDimensionImpact(Number(id), dimension.id);
+      setEditingDimension(dimension);
+      setDimensionImpact(impact);
+      dimensionForm.setFieldsValue({
+        ...dimension,
+        options_text: formatOptionsText(dimension.options),
+      });
+      setDimensionModalOpen(true);
+    } catch (err: any) {
+      message.error(err.response?.data?.detail || '无法读取维度引用信息');
+    }
+  };
+
+  const saveDimension = async () => {
+    if (!id || !editingDimension) return;
+    try {
+      const values = await dimensionForm.validateFields();
+      await productService.updateConfigDimension(Number(id), editingDimension.id, {
+        dimension_key: values.dimension_key.trim(),
+        dimension_label: values.dimension_label.trim(),
+        options: parseOptionsText(values.options_text),
+        parent_dimension: values.parent_dimension?.trim() || '',
+        is_required: values.is_required,
+        sort_order: values.sort_order ?? editingDimension.sort_order,
+      });
+      message.success('配置维度已更新');
+      setDimensionModalOpen(false);
+      reloadDimensions();
+    } catch (err: any) {
+      if (err?.errorFields) return;
+      message.error(err.response?.data?.detail || '维度更新失败');
+    }
+  };
+
+  const deleteDimension = async (dimension: any) => {
+    if (!id) return;
+    try {
+      const { data: impact } = await productService.getConfigDimensionImpact(Number(id), dimension.id);
+      if (impact.child_dimensions > 0) {
+        message.error('该维度仍有下级维度，请先修改下级维度的级联关系');
+        return;
+      }
+      Modal.confirm({
+        title: impact.can_delete ? `删除维度“${dimension.dimension_label}”？` : '删除维度并清除受影响定价数据？',
+        okText: impact.can_delete ? '删除' : '强制删除',
+        okButtonProps: { danger: true },
+        cancelText: '取消',
+        content: (
+          <Space direction="vertical" size={4}>
+            <Text>组合价格：{impact.matrix_rows} 条；价格规则：{impact.rules} 条；默认配置：{impact.presets} 条。</Text>
+            <Text>历史报价：{impact.quote_items} 条（仅保留快照，不会被改写）。</Text>
+            {!impact.can_delete && <Text type="danger">强制删除会清除上述受影响定价和默认配置，产品可能暂时无法报价。</Text>}
+          </Space>
+        ),
+        onOk: async () => {
+          await productService.deleteConfigDimension(Number(id), dimension.id, !impact.can_delete);
+          message.success('配置维度已删除');
+          reloadDimensions();
+        },
+      });
+    } catch (err: any) {
+      message.error(err.response?.data?.detail || '维度删除失败');
+    }
+  };
+
   const l2Options = categoryOptions?.category_l2?.[selectedL1] || [];
+  const selectedMappingSheet = configExcelPreview?.available_sheets?.find(
+    (sheet: any) => sheet.name === configMapping.sheet);
+  const mappingHeaders = selectedMappingSheet?.headers || [];
 
   return (
     <div style={{ maxWidth: 900 }}>
@@ -431,11 +537,22 @@ export default function ProductFormPage() {
                   pagination={false}
                   size="small"
                   columns={[
-                    { title: '维度键', dataIndex: 'dimension_key', width: 150 },
-                    { title: '展示名', dataIndex: 'dimension_label', width: 150 },
+                    { title: '维度键', dataIndex: 'dimension_key', width: 135 },
+                    { title: '展示名', dataIndex: 'dimension_label', width: 135 },
                     { title: '选项', dataIndex: 'options', render: (opts: any[]) => opts?.map(o => o.label || o.key).join(', ') },
-                    { title: '必填', dataIndex: 'is_required', render: (v: boolean) => v ? '是' : '否', width: 60 },
-                    { title: '级联', dataIndex: 'parent_dimension', width: 120 },
+                    { title: '必填', dataIndex: 'is_required', render: (v: boolean) => v ? '是' : '否', width: 55 },
+                    { title: '级联', dataIndex: 'parent_dimension', width: 115 },
+                    {
+                      title: '操作', width: 110, fixed: 'right' as const,
+                      render: (_: any, record: any) => (
+                        <Space size={2}>
+                          <Button size="small" type="link" icon={<EditOutlined />}
+                            onClick={() => openDimensionEditor(record)}>编辑</Button>
+                          <Button size="small" type="link" danger icon={<DeleteOutlined />}
+                            onClick={() => deleteDimension(record)}>删除</Button>
+                        </Space>
+                      ),
+                    },
                   ]}
                 />
               </Card>
@@ -462,16 +579,94 @@ export default function ProductFormPage() {
                   </Dragger>
                   {configExcelPreview && (
                     <Card size="small" style={{ marginTop: 8 }}>
-                      <Text>模式: {configExcelPreview.pricing_mode} | 维度: {configExcelPreview.dimensions_count} | 价格条目: {configExcelPreview.price_entries_count}</Text>
-                      {configExcelPreview.errors?.length > 0 && (
-                        <div style={{ color: 'red', marginTop: 4 }}>
-                          {configExcelPreview.errors.map((e: string, i: number) => <div key={i}>{e}</div>)}
-                        </div>
-                      )}
-                      <Button type="primary" style={{ marginTop: 8 }} onClick={handleConfigExcelConfirm}
-                        disabled={configExcelPreview.errors?.length > 0}>
-                        确认导入
-                      </Button>
+                      <Space direction="vertical" style={{ width: '100%' }}>
+                        <Text>
+                          识别格式: {configExcelPreview.detected_format || '-'} ｜
+                          维度: {configExcelPreview.dimensions_count} ｜
+                          价格: {configExcelPreview.price_entries_count} ｜
+                          默认配置: {configExcelPreview.preset_count || 0}
+                        </Text>
+
+                        {configExcelPreview.needs_mapping && (
+                          <Alert type="info" showIcon message="需要确认自制 Excel 的数据结构"
+                            description={
+                              <Space direction="vertical" style={{ width: '100%', marginTop: 8 }}>
+                                <Select placeholder="选择数据 Sheet" style={{ width: '100%' }}
+                                  value={configMapping.sheet}
+                                  onChange={(sheet) => setConfigMapping((prev: any) => ({ ...prev, sheet }))}
+                                  options={configExcelPreview.available_sheets.map((sheet: any) => ({
+                                    value: sheet.name, label: `${sheet.name}（${sheet.headers.join('、') || '无表头'}）`,
+                                  }))} />
+                                <Select placeholder="选择数据结构" style={{ width: '100%' }}
+                                  value={configMapping.format}
+                                  onChange={(format) => setConfigMapping((prev: any) => ({ ...prev, format }))}
+                                  options={[
+                                    { value: 'horizontal', label: '横向选项表（第一行是维度，每列向下是选项）' },
+                                    { value: 'vertical', label: '纵向明细表（每行是维度 + 选项）' },
+                                    { value: 'combination', label: '完整组合价格表（每行是一套配置 + 最终价格）' },
+                                  ]} />
+                                {configMapping.format === 'vertical' && (
+                                  <Space wrap>
+                                    <Select placeholder="维度名称列" style={{ width: 180 }}
+                                      value={configMapping.dimension_column}
+                                      onChange={(value) => setConfigMapping((prev: any) => ({ ...prev, dimension_column: value }))}
+                                      options={mappingHeaders.map((header: string) => ({ value: header, label: header }))} />
+                                    <Select placeholder="选项列" style={{ width: 180 }}
+                                      value={configMapping.option_column}
+                                      onChange={(value) => setConfigMapping((prev: any) => ({ ...prev, option_column: value }))}
+                                      options={mappingHeaders.map((header: string) => ({ value: header, label: header }))} />
+                                    <Select allowClear placeholder="是否必填列（可选）" style={{ width: 180 }}
+                                      value={configMapping.required_column}
+                                      onChange={(value) => setConfigMapping((prev: any) => ({ ...prev, required_column: value }))}
+                                      options={mappingHeaders.map((header: string) => ({ value: header, label: header }))} />
+                                    <Select allowClear placeholder="父维度列（可选）" style={{ width: 180 }}
+                                      value={configMapping.parent_column}
+                                      onChange={(value) => setConfigMapping((prev: any) => ({ ...prev, parent_column: value }))}
+                                      options={mappingHeaders.map((header: string) => ({ value: header, label: header }))} />
+                                  </Space>
+                                )}
+                                {configMapping.format === 'combination' && (
+                                  <Select placeholder="最终价格列" style={{ width: 220 }}
+                                    value={configMapping.price_column}
+                                    onChange={(value) => setConfigMapping((prev: any) => ({ ...prev, price_column: value }))}
+                                    options={mappingHeaders.map((header: string) => ({ value: header, label: header }))} />
+                                )}
+                                <Button type="primary" disabled={!configMapping.sheet || !configMapping.format}
+                                  onClick={() => configExcelFile && handleConfigExcelUpload(configExcelFile, configMapping)}>
+                                  按映射重新解析
+                                </Button>
+                              </Space>
+                            } />
+                        )}
+
+                        {configExcelPreview.impact && !configExcelPreview.needs_mapping && (
+                          <Alert type="info" showIcon message="导入影响预览"
+                            description={`现有 ${configExcelPreview.impact.existing_dimensions} 个维度、${configExcelPreview.impact.existing_matrix_rows} 条组合价格、${configExcelPreview.impact.existing_presets} 个预设；本次识别 ${configExcelPreview.impact.incoming_dimensions} 个维度、${configExcelPreview.impact.incoming_prices} 条价格。`} />
+                        )}
+                        {configExcelPreview.warnings?.map((warning: string, index: number) => (
+                          <Alert key={`warning-${index}`} type="warning" showIcon message={warning} />
+                        ))}
+                        {configExcelPreview.errors?.map((error: string, index: number) => (
+                          <Alert key={`error-${index}`} type="error" showIcon message={error} />
+                        ))}
+
+                        {!configExcelPreview.needs_mapping && (
+                          <Space direction="vertical">
+                            <Checkbox checked={replaceDimensions} onChange={(event) => setReplaceDimensions(event.target.checked)}>
+                              完全替换现有维度（默认不勾选，采用安全合并）
+                            </Checkbox>
+                            {configExcelPreview.price_entries_count > 0 && (
+                              <Checkbox checked={replacePrices} onChange={(event) => setReplacePrices(event.target.checked)}>
+                                用文件中的完整价格替换现有价格和默认配置
+                              </Checkbox>
+                            )}
+                            <Button type="primary" onClick={handleConfigExcelConfirm}
+                              disabled={configExcelPreview.errors?.length > 0 || configExcelPreview.dimensions_count === 0}>
+                              确认导入
+                            </Button>
+                          </Space>
+                        )}
+                      </Space>
                     </Card>
                   )}
                 </Space>
@@ -504,6 +699,55 @@ export default function ProductFormPage() {
           ),
         }] : []),
       ]} />
+
+      <Modal
+        title="编辑配置维度"
+        open={dimensionModalOpen}
+        onCancel={() => setDimensionModalOpen(false)}
+        onOk={saveDimension}
+        okText="保存"
+        cancelText="取消"
+        width={620}
+      >
+        {dimensionImpact?.history_note && (
+          <Alert type="info" showIcon message={dimensionImpact.history_note} style={{ marginBottom: 16 }} />
+        )}
+        <Form form={dimensionForm} layout="vertical">
+          <Form.Item name="dimension_key" label="维度键" rules={[{ required: true }]}>
+            <Input disabled={!!dimensionImpact?.key_locked}
+              addonAfter={dimensionImpact?.key_locked ? '已被引用，键已锁定' : undefined} />
+          </Form.Item>
+          <Form.Item name="dimension_label" label="展示名称" rules={[{ required: true }]}>
+            <Input />
+          </Form.Item>
+          <Form.Item name="options_text" label="选项" rules={[{ required: true }]} extra="使用逗号分隔；需要区分键和展示名时使用 key|展示名。已被价格引用的选项键不能删除。">
+            <TextArea rows={4} placeholder="P1|黑色, P2|白色, P3|灰色" />
+          </Form.Item>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name="parent_dimension" label="级联条件" extra="格式：父维度键 或 父维度键=父选项键">
+                <Input allowClear placeholder="backrest_material=网" />
+              </Form.Item>
+            </Col>
+            <Col span={6}>
+              <Form.Item name="is_required" label="是否必填">
+                <Select options={[{ value: true, label: '必填' }, { value: false, label: '可选' }]} />
+              </Form.Item>
+            </Col>
+            <Col span={6}>
+              <Form.Item name="sort_order" label="排序">
+                <InputNumber min={0} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+          </Row>
+          {dimensionImpact && (
+            <Text type="secondary">
+              当前引用：组合价格 {dimensionImpact.matrix_rows} 条、规则 {dimensionImpact.rules} 条、
+              默认配置 {dimensionImpact.presets} 条、历史报价 {dimensionImpact.quote_items} 条。
+            </Text>
+          )}
+        </Form>
+      </Modal>
     </div>
   );
 }

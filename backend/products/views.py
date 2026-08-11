@@ -27,6 +27,7 @@ from .serializers import (
 from .services import (
     CategoryOptionsService, CategoryService, ConfigExcelService,
     ConfigExportService, BatchProductImportService, CustomerWorkbookImportService,
+    DimensionMutationService, FlexibleConfigExcelService, SafeConfigExportService,
     PriceCalculationService, ProductCompositeService,
     ProductImageService, ProductImportService,
 )
@@ -54,6 +55,8 @@ class ProductViewSet(ModelViewSet):
         'download_import_template': 'export',
         'config_dimensions': 'view',
         'add_config_dimension': 'update',
+        'config_dimension_detail': {'GET': 'view', 'PATCH': 'update', 'DELETE': 'update'},
+        'config_dimension_impact': 'view',
         'calculate_price': 'view',
         'upload_config_excel': 'update',
         'download_config_template': 'export',
@@ -201,14 +204,51 @@ class ProductViewSet(ModelViewSet):
         dims = product.config_dimensions.all()
         return Response(ProductConfigDimensionSerializer(dims, many=True).data)
 
-    @action(detail=True, methods=['post'], url_path='config-dimensions/add',
-            permission_classes=[IsAuthenticated, IsAdminRole])
+    @action(detail=True, methods=['post'], url_path='config-dimensions/add')
     def add_config_dimension(self, request, pk=None):
         product = self.get_object()
         serializer = ProductConfigDimensionWriteSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         serializer.save(product=product)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['get', 'patch', 'delete'],
+            url_path=r'config-dimensions/(?P<dimension_id>[^/.]+)')
+    def config_dimension_detail(self, request, pk=None, dimension_id=None):
+        product = self.get_object()
+        dimension = ProductConfigDimension.objects.filter(
+            product=product, pk=dimension_id).first()
+        if not dimension:
+            return Response({'detail': '配置维度不存在'}, status=status.HTTP_404_NOT_FOUND)
+        if request.method == 'GET':
+            return Response(ProductConfigDimensionSerializer(dimension).data)
+        if request.method == 'PATCH':
+            serializer = ProductConfigDimensionWriteSerializer(
+                dimension, data=request.data, partial=True)
+            serializer.is_valid(raise_exception=True)
+            try:
+                updated = DimensionMutationService.update(
+                    product, dimension.id, serializer.validated_data)
+            except ValueError as exc:
+                return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(ProductConfigDimensionSerializer(updated).data)
+        force = str(request.query_params.get('force', '')).lower() == 'true'
+        try:
+            result = DimensionMutationService.delete(product, dimension.id, force=force)
+        except ValueError as exc:
+            impact = DimensionMutationService.impact(dimension)
+            return Response({'detail': str(exc), 'impact': impact}, status=status.HTTP_409_CONFLICT)
+        return Response(result)
+
+    @action(detail=True, methods=['get'],
+            url_path=r'config-dimensions/(?P<dimension_id>[^/.]+)/impact')
+    def config_dimension_impact(self, request, pk=None, dimension_id=None):
+        product = self.get_object()
+        dimension = ProductConfigDimension.objects.filter(
+            product=product, pk=dimension_id).first()
+        if not dimension:
+            return Response({'detail': '配置维度不存在'}, status=status.HTTP_404_NOT_FOUND)
+        return Response(DimensionMutationService.impact(dimension))
 
     # ─── 价格计算 ─────────────────────────────────────────────────────────────
 
@@ -226,35 +266,52 @@ class ProductViewSet(ModelViewSet):
 
     # ─── 配置 Excel 导入 ──────────────────────────────────────────────────────
 
-    @action(detail=True, methods=['post'], url_path='upload-config-excel',
-            permission_classes=[IsAuthenticated, IsAdminRole])
+    @action(detail=True, methods=['post'], url_path='upload-config-excel')
     def upload_config_excel(self, request, pk=None):
         product = self.get_object()
         file = request.FILES.get('file')
-        if not file or not file.name.endswith('.xlsx'):
+        if not file or not file.name.lower().endswith('.xlsx'):
             return Response({'detail': '请上传 .xlsx 格式文件'}, status=status.HTTP_400_BAD_REQUEST)
-
-        parsed = ConfigExcelService.parse_excel(product, file)
+        try:
+            raw_mapping = request.data.get('mapping', '{}')
+            mapping = json.loads(raw_mapping) if isinstance(raw_mapping, str) else (raw_mapping or {})
+            parsed = FlexibleConfigExcelService.parse_excel(product, file, mapping=mapping)
+        except (ValueError, TypeError, json.JSONDecodeError, openpyxl.utils.exceptions.InvalidFileException) as exc:
+            return Response({'detail': f'Excel 解析失败：{exc}'}, status=status.HTTP_400_BAD_REQUEST)
 
         if request.query_params.get('confirm') == 'true':
-            if parsed['errors']:
-                return Response({'detail': '存在错误，无法导入', 'errors': parsed['errors']},
-                                status=status.HTTP_400_BAD_REQUEST)
-            ConfigExcelService.execute_import(product, parsed)
-            return Response({'detail': '导入成功', 'success_count': parsed['success_count']})
+            if parsed['errors'] or parsed.get('needs_mapping'):
+                return Response({
+                    'detail': '存在错误或尚未完成字段映射，无法导入',
+                    'errors': parsed['errors'], 'warnings': parsed.get('warnings', []),
+                }, status=status.HTTP_400_BAD_REQUEST)
+            try:
+                result = FlexibleConfigExcelService.execute_import(
+                    product, parsed,
+                    replace_dimensions=str(request.data.get('replace_dimensions', '')).lower() == 'true',
+                    replace_prices=str(request.data.get('replace_prices', 'true')).lower() == 'true',
+                )
+            except ValueError as exc:
+                return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'detail': '导入成功', **result})
 
         return Response({
             'pricing_mode': parsed['pricing_mode'],
-            'base_price': str(parsed['base_price']) if parsed['base_price'] else None,
+            'base_price': str(parsed['base_price']) if parsed['base_price'] is not None else None,
             'dimensions_count': len(parsed['dimensions']),
             'dimensions': parsed['dimensions'],
             'price_entries_count': parsed['success_count'],
+            'preset_count': len(parsed.get('presets', [])),
             'failed_count': parsed['failed_count'],
+            'detected_format': parsed.get('detected_format'),
+            'needs_mapping': parsed.get('needs_mapping', False),
+            'available_sheets': parsed.get('available_sheets', []),
+            'impact': parsed.get('impact', {}),
             'errors': parsed['errors'],
+            'warnings': parsed.get('warnings', []),
         })
 
-    @action(detail=False, methods=['get'], url_path='config-template',
-            permission_classes=[IsAuthenticated, IsAdminRole])
+    @action(detail=False, methods=['get'], url_path='config-template')
     def download_config_template(self, request):
         content = ConfigExcelService.generate_template()
         resp = HttpResponse(content, content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
@@ -359,11 +416,10 @@ class ProductViewSet(ModelViewSet):
         resp['Content-Disposition'] = 'attachment; filename="product_customer_template.xlsx"'
         return resp
 
-    @action(detail=True, methods=['get'], url_path='export-config',
-            permission_classes=[IsAuthenticated, IsAdminRole])
+    @action(detail=True, methods=['get'], url_path='export-config')
     def export_config(self, request, pk=None):
         product = self.get_object()
-        content = ConfigExportService.export(product)
+        content = SafeConfigExportService.export(product)
         resp = HttpResponse(content, content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
         resp['Content-Disposition'] = f'attachment; filename="product_{product.id}_config.xlsx"'
         return resp

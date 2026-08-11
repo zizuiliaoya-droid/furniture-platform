@@ -71,6 +71,29 @@ class ProductConfigDimensionWriteSerializer(serializers.ModelSerializer):
             'parent_dimension', 'is_required', 'sort_order',
         ]
 
+    def validate_dimension_key(self, value):
+        value = str(value or '').strip()
+        if not value:
+            raise serializers.ValidationError('维度键不能为空')
+        return value
+
+    def validate_options(self, value):
+        if not isinstance(value, list) or not value:
+            raise serializers.ValidationError('至少需要一个配置选项')
+        normalized, seen = [], set()
+        for item in value:
+            if not isinstance(item, dict):
+                raise serializers.ValidationError('每个选项必须包含 key 和 label')
+            key = str(item.get('key') or '').strip()
+            label = str(item.get('label') or key).strip()
+            if not key:
+                raise serializers.ValidationError('选项键不能为空')
+            if key in seen:
+                raise serializers.ValidationError(f'选项键“{key}”重复')
+            seen.add(key)
+            normalized.append({'key': key, 'label': label or key})
+        return normalized
+
 
 # ─── ProductConfigPreset（预设/默认配置） ─────────────────────────────────────
 

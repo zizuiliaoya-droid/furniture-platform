@@ -7,6 +7,7 @@ from io import BytesIO
 import openpyxl
 from django.conf import settings
 from django.db import transaction
+from django.db.models import Q
 from django.utils.text import slugify
 
 from common.file_storage import FileStorageService
@@ -1290,3 +1291,638 @@ class ProductCompositeService:
         if files:
             ProductImageService.upload_images(product, list(files))
         return product
+
+
+# ─── 安全配置维度变更与通用 Excel 导入（2026-08）────────────────────────────
+
+class DimensionMutationService:
+    """配置维度的引用分析、事务化修改与安全删除。"""
+
+    @staticmethod
+    def _normalize_options(options):
+        normalized = []
+        seen = set()
+        for raw in options or []:
+            if not isinstance(raw, dict):
+                raise ValueError('选项必须包含 key 和 label')
+            key = str(raw.get('key') or '').strip()
+            label = str(raw.get('label') or key).strip()
+            if not key:
+                raise ValueError('选项键不能为空')
+            if key in seen:
+                raise ValueError(f'选项键“{key}”重复')
+            seen.add(key)
+            normalized.append({'key': key, 'label': label or key})
+        if not normalized:
+            raise ValueError('配置维度至少需要一个选项')
+        return normalized
+
+    @classmethod
+    def impact(cls, dimension):
+        from quotes.models import QuoteItem
+
+        key = dimension.dimension_key
+        matrices = [item for item in dimension.product.price_matrix.all()
+                    if key in (item.config_attributes or {})]
+        presets = [item for item in dimension.product.config_presets.all()
+                   if key in (item.selections or {})]
+        children = list(dimension.product.config_dimensions.filter(
+            Q(parent_dimension=key) | Q(parent_dimension__startswith=f'{key}=')
+        ))
+        quote_items = [item for item in QuoteItem.objects.filter(product=dimension.product).only('config_attributes')
+                       if key in (item.config_attributes or {})]
+        rules = list(dimension.product.price_rules.filter(dimension_key=key))
+        referenced_options = set()
+        for item in matrices:
+            referenced_options.add(str((item.config_attributes or {}).get(key, '')))
+        for item in presets:
+            referenced_options.add(str((item.selections or {}).get(key, '')))
+        referenced_options.update(str(item.option_key) for item in rules)
+        for child in children:
+            _, _, value = child.parent_dimension.partition('=')
+            if value:
+                referenced_options.add(value)
+        referenced_options.discard('')
+        blocking = len(matrices) + len(presets) + len(children) + len(rules)
+        return {
+            'dimension_id': dimension.id,
+            'dimension_key': key,
+            'matrix_rows': len(matrices),
+            'rules': len(rules),
+            'presets': len(presets),
+            'child_dimensions': len(children),
+            'quote_items': len(quote_items),
+            'can_delete': blocking == 0,
+            'key_locked': blocking > 0,
+            'locked_option_keys': sorted(referenced_options),
+            'history_note': '历史报价保存配置和价格快照，维度变更不会改写历史报价。',
+        }
+
+    @classmethod
+    @transaction.atomic
+    def update(cls, product, dimension_id, data):
+        dimension = ProductConfigDimension.objects.select_for_update().get(
+            id=dimension_id, product=product)
+        impact = cls.impact(dimension)
+        old_key = dimension.dimension_key
+        new_key = str(data.get('dimension_key', old_key)).strip()
+        if not new_key:
+            raise ValueError('维度键不能为空')
+        if new_key != old_key and impact['key_locked']:
+            raise ValueError('该维度已被定价、预设或下级维度引用，不能直接修改维度键')
+        if ProductConfigDimension.objects.filter(product=product, dimension_key=new_key).exclude(id=dimension.id).exists():
+            raise ValueError(f'维度键“{new_key}”已存在')
+
+        options = cls._normalize_options(data.get('options', dimension.options))
+        option_keys = {item['key'] for item in options}
+        removed_locked = set(impact['locked_option_keys']) - option_keys
+        if removed_locked:
+            raise ValueError(f'选项 {"、".join(sorted(removed_locked))} 已被定价或级联引用，不能直接删除')
+
+        parent = str(data.get('parent_dimension', dimension.parent_dimension) or '').strip()
+        if parent:
+            parent_key, _, parent_value = parent.partition('=')
+            if parent_key == new_key:
+                raise ValueError('维度不能依赖自身')
+            parent_dim = ProductConfigDimension.objects.filter(
+                product=product, dimension_key=parent_key).exclude(id=dimension.id).first()
+            if not parent_dim:
+                raise ValueError(f'父维度“{parent_key}”不存在')
+            if parent_value and parent_value not in {str(o.get('key')) for o in parent_dim.options or []}:
+                raise ValueError(f'父维度选项“{parent_value}”不存在')
+            visited = {new_key}
+            cursor = parent_dim
+            while cursor and cursor.parent_dimension:
+                ancestor_key = cursor.parent_dimension.partition('=')[0]
+                if ancestor_key in visited:
+                    raise ValueError('配置维度不能形成循环依赖')
+                visited.add(ancestor_key)
+                cursor = ProductConfigDimension.objects.filter(
+                    product=product, dimension_key=ancestor_key).first()
+
+        dimension.dimension_key = new_key
+        dimension.dimension_label = str(data.get('dimension_label', dimension.dimension_label)).strip() or new_key
+        dimension.options = options
+        dimension.parent_dimension = parent
+        dimension.is_required = bool(data.get('is_required', dimension.is_required))
+        dimension.sort_order = int(data.get('sort_order', dimension.sort_order) or 0)
+        dimension.save()
+        return dimension
+
+    @classmethod
+    @transaction.atomic
+    def delete(cls, product, dimension_id, force=False):
+        dimension = ProductConfigDimension.objects.select_for_update().get(
+            id=dimension_id, product=product)
+        impact = cls.impact(dimension)
+        if impact['child_dimensions']:
+            raise ValueError('该维度仍有下级维度，请先修改或删除下级维度的级联关系')
+        if not impact['can_delete'] and not force:
+            raise ValueError('该维度仍被定价或默认配置引用，请查看影响后再确认强制删除')
+
+        removed = {'matrix_rows': 0, 'rules': 0, 'presets': 0}
+        if force:
+            key = dimension.dimension_key
+            matrix_ids = [item.id for item in product.price_matrix.all()
+                          if key in (item.config_attributes or {})]
+            preset_ids = [item.id for item in product.config_presets.all()
+                          if key in (item.selections or {})]
+            removed['matrix_rows'], _ = product.price_matrix.filter(id__in=matrix_ids).delete()
+            removed['presets'], _ = product.config_presets.filter(id__in=preset_ids).delete()
+            removed['rules'], _ = product.price_rules.filter(dimension_key=key).delete()
+        dimension.delete()
+        lowest = product.price_matrix.order_by('price').values_list('price', flat=True).first()
+        product.min_price = lowest
+        product.save(update_fields=['min_price'])
+        return {'impact': impact, 'removed': removed}
+
+
+class FlexibleConfigExcelService:
+    """兼容标准、自制横向、自制纵向及组合价格表的安全配置导入。"""
+
+    SHEET_ALIASES = {
+        'dimensions': {'dimensions', '维度', '配置维度', '维度配置'},
+        'pricing_mode': {'pricingmode', '定价模式', '价格模式'},
+        'matrix': {'matrix', '组合价格', '价格矩阵', '配置价格'},
+        'rules': {'rules', '价格规则', '加价规则'},
+        'presets': {'presets', '默认配置', '配置预设', '预设配置'},
+    }
+    HEADER_ALIASES = {
+        'dimension_key': {'dimensionkey', '维度键', '配置键'},
+        'dimension_label': {'dimensionlabel', '维度名称', '配置名称', '配置维度', '维度'},
+        'options': {'options', '选项', '配置选项', '选项列表'},
+        'option': {'option', 'optionlabel', '选项', '选项名称', '配置选项'},
+        'parent_dimension': {'parentdimension', '父维度', '级联', '级联条件'},
+        'is_required': {'isrequired', 'required', '是否必填', '必填'},
+        'sort_order': {'sortorder', '排序', '顺序'},
+        'price': {'price', '最终价格', '组合价格', '价格', '售价'},
+        'price_delta': {'pricedelta', '加价', '价格增量'},
+        'option_key': {'optionkey', '选项键', '选项代码'},
+        'code': {'code', '组合编号', '预设编号'},
+        'label': {'label', '组合名称', '预设名称'},
+        'is_default': {'isdefault', '是否默认', '默认'},
+    }
+    META_HEADERS = {'code', 'label', 'is_default'}
+
+    @staticmethod
+    def _text(value):
+        return ' '.join(str(value or '').replace('\n', ' ').replace('\r', ' ').strip().split())
+
+    @classmethod
+    def _norm(cls, value):
+        text = cls._text(value).casefold()
+        for char in (' ', '_', '-', '/', '\\', '（', '）', '(', ')', '：', ':'):
+            text = text.replace(char, '')
+        return text
+
+    @classmethod
+    def _canonical_header(cls, value):
+        normalized = cls._norm(value)
+        for canonical, aliases in cls.HEADER_ALIASES.items():
+            if normalized in {cls._norm(alias) for alias in aliases}:
+                return canonical
+        return ''
+
+    @classmethod
+    def _sheet_map(cls, workbook):
+        result = {}
+        for name in workbook.sheetnames:
+            normalized = cls._norm(name)
+            for canonical, aliases in cls.SHEET_ALIASES.items():
+                if normalized in {cls._norm(alias) for alias in aliases}:
+                    result[canonical] = name
+        return result
+
+    @classmethod
+    def _dimension_key(cls, label, used):
+        raw = cls._text(label).lower()
+        safe = ''.join(char if char.isascii() and char.isalnum() else '_' for char in raw)
+        safe = '_'.join(part for part in safe.split('_') if part)
+        base = safe[:80] or f'dim_{hashlib.sha1(raw.encode()).hexdigest()[:10]}'
+        key, index = base, 2
+        while key in used:
+            key = f'{base}_{index}'[:100]
+            index += 1
+        used.add(key)
+        return key
+
+    @staticmethod
+    def _truthy(value):
+        return str(value or '').strip().upper() in {'TRUE', '1', '是', 'Y', 'YES', '默认'}
+
+    @classmethod
+    def _split_options(cls, value):
+        import re
+        items, seen = [], set()
+        for token in re.split(r'[,，;；\n]+', cls._text(value)):
+            token = token.strip()
+            if not token or token in seen:
+                continue
+            seen.add(token)
+            if '|' in token:
+                key, label = (part.strip() for part in token.split('|', 1))
+            else:
+                key = label = token
+            if key:
+                items.append({'key': key, 'label': label or key})
+        return items
+
+    @classmethod
+    def _base_result(cls, workbook):
+        available = []
+        for name in workbook.sheetnames:
+            ws = workbook[name]
+            headers = [cls._text(cell.value) for cell in ws[1] if cls._text(cell.value)]
+            preview = []
+            for row in ws.iter_rows(min_row=1, max_row=min(ws.max_row, 20), values_only=True):
+                preview.append([cls._text(value) for value in row])
+            available.append({'name': name, 'headers': headers, 'preview': preview})
+        return {
+            'pricing_mode': 'MATRIX', 'base_price': None, 'dimensions': [],
+            'price_entries': [], 'presets': [], 'errors': [], 'warnings': [],
+            'success_count': 0, 'failed_count': 0, 'detected_format': '',
+            'needs_mapping': False, 'available_sheets': available,
+        }
+
+    @classmethod
+    def parse_excel(cls, product, file, mapping=None):
+        mapping = mapping or {}
+        workbook = openpyxl.load_workbook(file, read_only=False, data_only=True)
+        result = cls._base_result(workbook)
+        sheet_map = cls._sheet_map(workbook)
+        if 'dimensions' in sheet_map and not mapping:
+            cls._parse_standard(workbook, sheet_map, result)
+        else:
+            candidates = [item for item in result['available_sheets']
+                          if item['headers'] and cls._norm(item['name']) not in {'填写说明', '说明'}]
+            selected_name = mapping.get('sheet')
+            if not selected_name and len(candidates) == 1:
+                selected_name = candidates[0]['name']
+            if not selected_name or selected_name not in workbook.sheetnames:
+                result['needs_mapping'] = True
+                result['detected_format'] = 'mapping_required'
+                result['warnings'].append('检测到多个或无法确定的数据 Sheet，请选择 Sheet 和数据结构后重新解析')
+                return cls._finish(product, result)
+            cls._parse_custom(workbook[selected_name], result, mapping)
+        return cls._finish(product, result)
+
+    @classmethod
+    def _parse_standard(cls, workbook, sheet_map, result):
+        result['detected_format'] = 'standard'
+        ws = workbook[sheet_map['dimensions']]
+        rows = list(ws.iter_rows(values_only=True))
+        if not rows:
+            result['errors'].append(f'{ws.title}: 没有表头')
+            return
+        header_lookup = {cls._canonical_header(value): index for index, value in enumerate(rows[0])
+                         if cls._canonical_header(value)}
+        for required in ('dimension_key', 'dimension_label', 'options'):
+            if required not in header_lookup:
+                result['errors'].append(f'{ws.title}: 缺少必填表头 {required}')
+        if result['errors']:
+            return
+        used = set()
+        for row_no, row in enumerate(rows[1:], start=2):
+            key = cls._text(row[header_lookup['dimension_key']] if len(row) > header_lookup['dimension_key'] else '')
+            label = cls._text(row[header_lookup['dimension_label']] if len(row) > header_lookup['dimension_label'] else '')
+            if not key and not label:
+                continue
+            if not key:
+                result['errors'].append(f'{ws.title}!A{row_no}: 维度键为空')
+                continue
+            if key in used:
+                result['errors'].append(f'{ws.title}!A{row_no}: 维度键“{key}”重复')
+                continue
+            used.add(key)
+            options = cls._split_options(row[header_lookup['options']] if len(row) > header_lookup['options'] else '')
+            if not options:
+                result['errors'].append(f'{ws.title} 第{row_no}行: 选项为空')
+                continue
+            def value(name, default=''):
+                index = header_lookup.get(name)
+                return row[index] if index is not None and len(row) > index else default
+            try:
+                sort_order = int(value('sort_order', len(result['dimensions'])) or len(result['dimensions']))
+            except (TypeError, ValueError):
+                result['errors'].append(f'{ws.title} 第{row_no}行: 排序必须是整数')
+                continue
+            result['dimensions'].append({
+                'dimension_key': key, 'dimension_label': label or key, 'options': options,
+                'parent_dimension': cls._text(value('parent_dimension')),
+                'is_required': cls._truthy(value('is_required', 'TRUE')),
+                'sort_order': sort_order,
+            })
+        dimensions = {item['dimension_key']: item for item in result['dimensions']}
+        if 'pricing_mode' in sheet_map:
+            rows = list(workbook[sheet_map['pricing_mode']].iter_rows(min_row=2, values_only=True))
+            if rows:
+                mode = cls._text(rows[0][0]).upper()
+                result['pricing_mode'] = mode if mode in {'MATRIX', 'RULE'} else 'MATRIX'
+                if len(rows[0]) > 1 and rows[0][1] not in (None, ''):
+                    try:
+                        result['base_price'] = Decimal(str(rows[0][1]))
+                    except Exception:
+                        result['errors'].append(f'{sheet_map["pricing_mode"]}!B2: 基准价格式错误')
+        target = sheet_map.get('matrix' if result['pricing_mode'] == 'MATRIX' else 'rules')
+        if target:
+            cls._parse_price_sheet(workbook[target], result, dimensions)
+        if 'presets' in sheet_map:
+            cls._parse_preset_sheet(workbook[sheet_map['presets']], result, dimensions)
+
+    @classmethod
+    def _parse_custom(cls, ws, result, mapping):
+        rows = list(ws.iter_rows(values_only=True))
+        if not rows:
+            result['errors'].append(f'{ws.title}: 工作表为空')
+            return
+        headers = [cls._text(value) for value in rows[0]]
+        canonical = {cls._canonical_header(header): header for header in headers if cls._canonical_header(header)}
+        format_name = mapping.get('format')
+        if not format_name:
+            if ('dimension_label' in canonical and ('option' in canonical or 'options' in canonical)):
+                format_name = 'vertical'
+            elif 'price' in canonical:
+                format_name = 'combination'
+            else:
+                format_name = 'horizontal'
+        result['detected_format'] = format_name
+        if format_name == 'vertical':
+            dim_header = mapping.get('dimension_column') or canonical.get('dimension_label')
+            option_header = mapping.get('option_column') or canonical.get('option') or canonical.get('options')
+            if dim_header not in headers or option_header not in headers:
+                result['needs_mapping'] = True
+                result['errors'].append('纵向表需要指定“维度名称列”和“选项列”')
+                return
+            grouped, used = {}, set()
+            for row_no, row in enumerate(rows[1:], start=2):
+                data = dict(zip(headers, row))
+                label = cls._text(data.get(dim_header))
+                option_text = cls._text(data.get(option_header))
+                if not label and not option_text:
+                    continue
+                if not label or not option_text:
+                    result['errors'].append(f'{ws.title} 第{row_no}行: 维度名称或选项为空')
+                    continue
+                if label not in grouped:
+                    grouped[label] = {
+                        'dimension_key': cls._dimension_key(label, used), 'dimension_label': label,
+                        'options': [], 'parent_dimension': '', 'is_required': True,
+                        'sort_order': len(grouped),
+                    }
+                for option in cls._split_options(option_text):
+                    if option['key'] not in {item['key'] for item in grouped[label]['options']}:
+                        grouped[label]['options'].append(option)
+                required_col = mapping.get('required_column') or canonical.get('is_required')
+                parent_col = mapping.get('parent_column') or canonical.get('parent_dimension')
+                if required_col in headers:
+                    grouped[label]['is_required'] = cls._truthy(data.get(required_col))
+                if parent_col in headers:
+                    grouped[label]['parent_dimension'] = cls._text(data.get(parent_col))
+            result['dimensions'] = list(grouped.values())
+            return
+
+        price_header = mapping.get('price_column') or canonical.get('price')
+        metadata = {value for key, value in canonical.items() if key in cls.META_HEADERS}
+        if price_header:
+            metadata.add(price_header)
+            format_name = result['detected_format'] = 'combination'
+        dimension_headers = [header for header in headers if header and header not in metadata]
+        if not dimension_headers:
+            result['errors'].append(f'{ws.title}: 没有可识别的配置维度列')
+            return
+        used = set()
+        dimensions = []
+        for order, header in enumerate(dimension_headers):
+            options, seen = [], set()
+            for row in rows[1:]:
+                data = dict(zip(headers, row))
+                value = cls._text(data.get(header))
+                if value and value.upper() not in {'N/A', 'NA', '-'} and value not in seen:
+                    seen.add(value)
+                    options.append({'key': value, 'label': value})
+            if options:
+                dimensions.append({
+                    'dimension_key': cls._dimension_key(header, used),
+                    'dimension_label': header, 'options': options,
+                    'parent_dimension': '', 'is_required': True, 'sort_order': order,
+                    'source_header': header,
+                })
+        result['dimensions'] = dimensions
+        if format_name != 'combination':
+            return
+        if price_header not in headers:
+            result['needs_mapping'] = True
+            result['errors'].append('组合价格表需要指定价格列')
+            return
+        code_header = canonical.get('code')
+        label_header = canonical.get('label')
+        default_header = canonical.get('is_default')
+        seen_signatures = set()
+        for row_no, row in enumerate(rows[1:], start=2):
+            data = dict(zip(headers, row))
+            if all(cls._text(data.get(header)) == '' for header in dimension_headers):
+                continue
+            try:
+                price = Decimal(str(data.get(price_header)))
+            except Exception:
+                result['errors'].append(f'{ws.title} 第{row_no}行: 价格无效')
+                continue
+            selections = {}
+            for dimension in dimensions:
+                value = cls._text(data.get(dimension['source_header']))
+                if value:
+                    selections[dimension['dimension_key']] = value
+            if len(selections) != len(dimensions):
+                result['errors'].append(f'{ws.title} 第{row_no}行: 配置组合不完整')
+                continue
+            signature = ProductPriceMatrix.build_signature(selections)
+            if signature in seen_signatures:
+                result['errors'].append(f'{ws.title} 第{row_no}行: 配置组合重复')
+                continue
+            seen_signatures.add(signature)
+            result['price_entries'].append({'config': selections, 'price': price})
+            code = cls._text(data.get(code_header)) if code_header else f'COMBO-{row_no}'
+            label = cls._text(data.get(label_header)) if label_header else code
+            result['presets'].append({
+                'code': code or f'COMBO-{row_no}', 'label': label or code,
+                'selections': selections,
+                'is_default': cls._truthy(data.get(default_header)) if default_header else False,
+            })
+
+    @classmethod
+    def _parse_price_sheet(cls, ws, result, dimensions):
+        rows = list(ws.iter_rows(values_only=True))
+        if not rows:
+            return
+        headers = [cls._text(value) for value in rows[0]]
+        canonical = {cls._canonical_header(header): header for header in headers if cls._canonical_header(header)}
+        if result['pricing_mode'] == 'MATRIX':
+            price_header = canonical.get('price')
+            if not price_header:
+                result['errors'].append(f'{ws.title}: 缺少 price/最终价格列')
+                return
+            unknown = [header for header in headers if header and header != price_header and header not in dimensions]
+            if unknown:
+                result['errors'].append(f'{ws.title}: 未知维度列：{"、".join(unknown)}')
+                return
+            for row_no, row in enumerate(rows[1:], start=2):
+                data = dict(zip(headers, row))
+                if not any(cls._text(value) for value in row):
+                    continue
+                try:
+                    price = Decimal(str(data.get(price_header)))
+                except Exception:
+                    result['errors'].append(f'{ws.title} 第{row_no}行: 价格无效')
+                    continue
+                config = {key: cls._text(data.get(key)) for key in dimensions if cls._text(data.get(key))}
+                if not config:
+                    result['errors'].append(f'{ws.title} 第{row_no}行: 未填写配置选项')
+                    continue
+                result['price_entries'].append({'config': config, 'price': price})
+        else:
+            required = ('dimension_key', 'option_key', 'price_delta')
+            if any(name not in canonical for name in required):
+                result['errors'].append(f'{ws.title}: 缺少 dimension_key、option_key 或 price_delta 列')
+                return
+            for row_no, row in enumerate(rows[1:], start=2):
+                data = dict(zip(headers, row))
+                try:
+                    result['price_entries'].append({
+                        'dimension_key': cls._text(data.get(canonical['dimension_key'])),
+                        'option_key': cls._text(data.get(canonical['option_key'])),
+                        'price_delta': Decimal(str(data.get(canonical['price_delta']))),
+                    })
+                except Exception:
+                    result['errors'].append(f'{ws.title} 第{row_no}行: 加价格式错误')
+
+    @classmethod
+    def _parse_preset_sheet(cls, ws, result, dimensions):
+        rows = list(ws.iter_rows(values_only=True))
+        if not rows:
+            return
+        headers = [cls._text(value) for value in rows[0]]
+        canonical = {cls._canonical_header(header): header for header in headers if cls._canonical_header(header)}
+        for row_no, row in enumerate(rows[1:], start=2):
+            data = dict(zip(headers, row))
+            selections = {key: cls._text(data.get(key)) for key in dimensions if cls._text(data.get(key))}
+            if not selections:
+                continue
+            result['presets'].append({
+                'code': cls._text(data.get(canonical.get('code'))) or f'PRESET-{row_no}',
+                'label': cls._text(data.get(canonical.get('label'))),
+                'selections': selections,
+                'is_default': cls._truthy(data.get(canonical.get('is_default'))),
+            })
+
+    @classmethod
+    def _finish(cls, product, result):
+        result['success_count'] = len(result['price_entries'])
+        if not result['needs_mapping'] and not result['dimensions']:
+            result['errors'].append('未解析到任何配置维度，禁止导入')
+        defaults = [item for item in result['presets'] if item.get('is_default')]
+        if len(defaults) > 1:
+            result['errors'].append('默认配置不能超过一条')
+        result['failed_count'] = len(result['errors'])
+        if not result['price_entries']:
+            result['warnings'].append('文件未包含完整组合价格；本次只合并维度和选项，现有定价与默认配置将保留')
+        result['impact'] = {
+            'existing_dimensions': product.config_dimensions.count(),
+            'existing_matrix_rows': product.price_matrix.count(),
+            'existing_rules': product.price_rules.count(),
+            'existing_presets': product.config_presets.count(),
+            'incoming_dimensions': len(result['dimensions']),
+            'incoming_prices': len(result['price_entries']),
+            'incoming_presets': len(result['presets']),
+        }
+        return result
+
+    @classmethod
+    @transaction.atomic
+    def execute_import(cls, product, parsed, replace_dimensions=False, replace_prices=True):
+        if parsed.get('needs_mapping') or parsed.get('errors') or not parsed.get('dimensions'):
+            raise ValueError('解析结果不完整，不能执行导入')
+        has_prices = bool(parsed.get('price_entries'))
+        if replace_dimensions and not has_prices and (
+                product.price_matrix.exists() or product.price_rules.exists() or product.config_presets.exists()):
+            raise ValueError('完全替换维度必须同时提供完整价格数据；请改用默认的合并模式')
+        if replace_dimensions:
+            product.config_dimensions.all().delete()
+        for item in parsed['dimensions']:
+            defaults = {
+                'dimension_label': item['dimension_label'], 'options': item['options'],
+                'parent_dimension': item.get('parent_dimension', ''),
+                'is_required': item.get('is_required', True),
+                'sort_order': item.get('sort_order', 0),
+            }
+            ProductConfigDimension.objects.update_or_create(
+                product=product, dimension_key=item['dimension_key'], defaults=defaults)
+        if has_prices and replace_prices:
+            product.price_matrix.all().delete()
+            product.price_rules.all().delete()
+            product.config_presets.all().delete()
+            if parsed['pricing_mode'] == 'MATRIX':
+                for entry in parsed['price_entries']:
+                    config = ProductPriceMatrix.normalize_selections(entry['config'])
+                    ProductPriceMatrix.objects.create(
+                        product=product,
+                        config_signature=ProductPriceMatrix.build_signature(config),
+                        config_attributes=config, price=entry['price'])
+                product.min_price = min(entry['price'] for entry in parsed['price_entries'])
+            else:
+                for order, entry in enumerate(parsed['price_entries']):
+                    ProductPriceRule.objects.create(product=product, sort_order=order, **entry)
+            for order, preset in enumerate(parsed.get('presets', [])):
+                ProductConfigPreset.objects.create(
+                    product=product, code=preset['code'], label=preset.get('label', ''),
+                    selections=ProductPriceMatrix.normalize_selections(preset['selections']),
+                    is_default=preset.get('is_default', False), sort_order=order)
+            product.pricing_mode = parsed['pricing_mode']
+            if parsed.get('base_price') is not None:
+                product.base_price = parsed['base_price']
+            product.save(update_fields=['pricing_mode', 'base_price', 'min_price'])
+        return {
+            'dimensions': len(parsed['dimensions']), 'prices': len(parsed.get('price_entries', [])),
+            'presets': len(parsed.get('presets', [])), 'mode': 'replace' if replace_dimensions else 'merge',
+        }
+
+
+class SafeConfigExportService:
+    """导出可直接回导的完整标准配置工作簿。"""
+
+    @staticmethod
+    def export(product):
+        workbook = openpyxl.Workbook()
+        dimensions = workbook.active
+        dimensions.title = 'dimensions'
+        dimensions.append(['dimension_key', 'dimension_label', 'options', 'parent_dimension', 'is_required', 'sort_order'])
+        dimension_keys = []
+        for item in product.config_dimensions.all():
+            dimension_keys.append(item.dimension_key)
+            options = ','.join(
+                f'{option.get("key")}|{option.get("label")}'
+                if option.get('label') and option.get('label') != option.get('key') else str(option.get('key', ''))
+                for option in item.options or [] if isinstance(option, dict))
+            dimensions.append([item.dimension_key, item.dimension_label, options, item.parent_dimension,
+                               'TRUE' if item.is_required else 'FALSE', item.sort_order])
+        mode = workbook.create_sheet('pricing_mode')
+        mode.append(['mode', 'base_price'])
+        mode.append([product.pricing_mode, product.base_price])
+        if product.pricing_mode == 'MATRIX':
+            prices = workbook.create_sheet('matrix')
+            prices.append([*dimension_keys, 'price'])
+            for item in product.price_matrix.all():
+                prices.append([*(item.config_attributes.get(key, '') for key in dimension_keys), item.price])
+        else:
+            prices = workbook.create_sheet('rules')
+            prices.append(['dimension_key', 'option_key', 'price_delta'])
+            for item in product.price_rules.all():
+                prices.append([item.dimension_key, item.option_key, item.price_delta])
+        presets = workbook.create_sheet('presets')
+        presets.append(['code', 'label', 'is_default', *dimension_keys])
+        for item in product.config_presets.all():
+            presets.append([item.code, item.label, 'TRUE' if item.is_default else 'FALSE',
+                            *(item.selections.get(key, '') for key in dimension_keys)])
+        buffer = BytesIO()
+        workbook.save(buffer)
+        buffer.seek(0)
+        return buffer.getvalue()

@@ -50,15 +50,29 @@ export const productService = {
     api.get(`/api/products/${productId}/config-dimensions/`),
   addConfigDimension: (productId: number, data: any) =>
     api.post(`/api/products/${productId}/config-dimensions/add/`, data),
+  getConfigDimensionImpact: (productId: number, dimensionId: number) =>
+    api.get(`/api/products/${productId}/config-dimensions/${dimensionId}/impact/`),
+  updateConfigDimension: (productId: number, dimensionId: number, data: any) =>
+    api.patch(`/api/products/${productId}/config-dimensions/${dimensionId}/`, data),
+  deleteConfigDimension: (productId: number, dimensionId: number, force = false) =>
+    api.delete(`/api/products/${productId}/config-dimensions/${dimensionId}/${force ? '?force=true' : ''}`),
 
   // ─── 价格计算（新） ────────────────────────────────────────────────────────
   calculatePrice: (productId: number, selections: Record<string, string>) =>
     api.post(`/api/products/${productId}/calculate-price/`, { selections }),
 
   // ─── 配置 Excel 导入（新） ─────────────────────────────────────────────────
-  uploadConfigExcel: (productId: number, file: File, confirm = false) => {
+  uploadConfigExcel: (
+    productId: number,
+    file: File,
+    confirm = false,
+    options: { mapping?: any; replaceDimensions?: boolean; replacePrices?: boolean } = {},
+  ) => {
     const fd = new FormData();
     fd.append('file', file);
+    fd.append('mapping', JSON.stringify(options.mapping || {}));
+    fd.append('replace_dimensions', String(!!options.replaceDimensions));
+    fd.append('replace_prices', String(options.replacePrices !== false));
     return api.post(
       `/api/products/${productId}/upload-config-excel/${confirm ? '?confirm=true' : ''}`,
       fd,
