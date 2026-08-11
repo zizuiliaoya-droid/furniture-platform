@@ -1,0 +1,4 @@
+interface:
+  display_name: "家具平台系统"
+  short_description: "连接家具管理平台、检查账号权限并发现当前可调用的业务能力"
+  default_prompt: "Use $furniture-system to check the furniture platform capabilities available to my account."

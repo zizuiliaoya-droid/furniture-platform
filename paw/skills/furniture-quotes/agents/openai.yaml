@@ -1,0 +1,4 @@
+interface:
+  display_name: "家具报价草稿"
+  short_description: "根据已验证的产品配置创建幂等、可审阅且未发送的报价草稿"
+  default_prompt: "Use $furniture-quotes to create a reviewable draft quotation from these products."

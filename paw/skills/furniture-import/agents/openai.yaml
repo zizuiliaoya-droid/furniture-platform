@@ -1,0 +1,4 @@
+interface:
+  display_name: "家具配置导入"
+  short_description: "预览、映射并通过一次性确认票据安全导入家具配置价格表"
+  default_prompt: "Use $furniture-import to preview this configuration workbook without writing data."

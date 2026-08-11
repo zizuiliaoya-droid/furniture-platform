@@ -1,0 +1,4 @@
+interface:
+  display_name: "家具产品检索"
+  short_description: "按照品类、品牌、产地、货期和价格条件检索并比较家具产品"
+  default_prompt: "Use $furniture-catalog to find furniture products that match my requirements."

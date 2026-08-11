@@ -1,0 +1,4 @@
+interface:
+  display_name: "家具资料与案例"
+  short_description: "在权限范围内检索内部设计资料、培训文档、证书和项目案例"
+  default_prompt: "Use $furniture-documents to find internal materials and project cases relevant to this request."

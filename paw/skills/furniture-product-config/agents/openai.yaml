@@ -1,0 +1,4 @@
+interface:
+  display_name: "家具配置与算价"
+  short_description: "查询产品配置维度和有效选项，并通过后端服务计算准确报价"
+  default_prompt: "Use $furniture-product-config to validate this product configuration and calculate its exact price."
