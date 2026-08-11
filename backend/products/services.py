@@ -39,6 +39,7 @@ class ProductImageService:
             for f in files:
                 if f.size > settings.MAX_IMAGE_SIZE:
                     raise ValueError(f'图片 {f.name} 超过大小限制')
+                FileStorageService.validate_image(f)
                 path = FileStorageService.upload(f, 'products')
                 uploaded_paths.append(path)
                 thumbs = FileStorageService.generate_thumbnails(path)

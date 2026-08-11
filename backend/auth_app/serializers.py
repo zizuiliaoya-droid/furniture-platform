@@ -39,7 +39,7 @@ class UserSerializer(serializers.ModelSerializer):
 
 
 class UserCreateSerializer(serializers.ModelSerializer):
-    password = serializers.CharField(write_only=True, min_length=6)
+    password = serializers.CharField(write_only=True, min_length=12, max_length=128)
 
     class Meta:
         model = User
@@ -60,9 +60,9 @@ class UserCreateSerializer(serializers.ModelSerializer):
 
 
 class LoginSerializer(serializers.Serializer):
-    username = serializers.CharField()
-    password = serializers.CharField()
+    username = serializers.CharField(max_length=150)
+    password = serializers.CharField(max_length=128, trim_whitespace=False)
 
 
 class ResetPasswordSerializer(serializers.Serializer):
-    new_password = serializers.CharField(min_length=6)
+    new_password = serializers.CharField(min_length=12, max_length=128, trim_whitespace=False)

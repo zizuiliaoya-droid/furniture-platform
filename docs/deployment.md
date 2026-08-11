@@ -15,7 +15,7 @@
 ```text
 DJANGO_SECRET_KEY=<random-secret>
 DJANGO_DEBUG=False
-DJANGO_ALLOWED_HOSTS=furniture-api-zk.zeabur.app,furniture-zk.zeabur.app
+DJANGO_ALLOWED_HOSTS=furniture-api-zk.zeabur.app,furniture-zk.zeabur.app,127.0.0.1,localhost
 CORS_ALLOWED_ORIGINS=https://furniture-zk.zeabur.app
 CSRF_TRUSTED_ORIGINS=https://furniture-api-zk.zeabur.app,https://furniture-zk.zeabur.app
 PUBLIC_WEB_URL=https://furniture-zk.zeabur.app

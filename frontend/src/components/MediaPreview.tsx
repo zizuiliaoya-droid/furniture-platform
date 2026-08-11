@@ -1,4 +1,5 @@
 import { Image, Modal } from 'antd';
+import DOMPurify from 'dompurify';
 import { useState } from 'react';
 
 interface MediaPreviewProps {
@@ -10,6 +11,10 @@ interface MediaPreviewProps {
   /** 是否为富文本 */
   isRichText?: boolean;
   trigger?: React.ReactNode;
+}
+
+export function sanitizeRichText(content: string) {
+  return DOMPurify.sanitize(content, { USE_PROFILES: { html: true } });
 }
 
 /**
@@ -56,10 +61,11 @@ export default function MediaPreview({
 
   const renderContent = () => {
     if (isRichText) {
+      const safeContent = sanitizeRichText(richTextContent || '');
       return (
         <div
           style={{ padding: '8px 0', maxHeight: '70vh', overflow: 'auto' }}
-          dangerouslySetInnerHTML={{ __html: richTextContent || '' }}
+          dangerouslySetInnerHTML={{ __html: safeContent }}
         />
       );
     }

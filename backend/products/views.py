@@ -161,7 +161,10 @@ class ProductViewSet(ModelViewSet):
         files = request.FILES.getlist('images')
         if not files:
             return Response({'detail': '请选择图片'}, status=status.HTTP_400_BAD_REQUEST)
-        images = ProductImageService.upload_images(product, files)
+        try:
+            images = ProductImageService.upload_images(product, files)
+        except ValueError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(ProductImageSerializer(images, many=True).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['put'], url_path='images/order', permission_classes=[IsAuthenticated, IsAdminRole])

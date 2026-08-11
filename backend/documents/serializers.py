@@ -35,7 +35,10 @@ class DocumentSerializer(serializers.ModelSerializer):
             'file_path', 'file_size', 'mime_type', 'tags',
             'created_by', 'created_at',
         ]
-        read_only_fields = ['id', 'created_by', 'created_at']
+        read_only_fields = [
+            'id', 'resource_type', 'content', 'file_path', 'file_size',
+            'mime_type', 'created_by', 'created_at',
+        ]
 
 
 class DocumentTagUpdateSerializer(serializers.Serializer):

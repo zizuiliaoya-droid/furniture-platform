@@ -42,7 +42,14 @@ class CaseViewSet(ModelViewSet):
         created = []
         for f in files:
             if f.size > settings.MAX_IMAGE_SIZE:
-                continue
+                return Response(
+                    {'detail': f'图片 {f.name} 超过大小限制'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            try:
+                FileStorageService.validate_image(f)
+            except ValueError as exc:
+                return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
             path = FileStorageService.upload(f, 'cases')
             thumbs = FileStorageService.generate_thumbnails(path)
             img = CaseImage.objects.create(

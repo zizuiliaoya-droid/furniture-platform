@@ -43,6 +43,7 @@ class DocumentViewSet(ModelViewSet):
     serializer_class = DocumentSerializer
     permission_classes = [IsAuthenticated, HasModulePermission]
     module_name = 'DOCUMENT'
+    http_method_names = ['get', 'delete', 'head', 'options']
 
     def get_queryset(self):
         qs = Document.objects.select_related('folder', 'created_by')
@@ -70,6 +71,10 @@ def upload_document(request):
         return Response({'detail': '请选择文件'}, status=status.HTTP_400_BAD_REQUEST)
     if file.size > settings.MAX_DOCUMENT_SIZE:
         return Response({'detail': '文件大小不能超过 50MB'}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        FileStorageService.validate_document(file)
+    except ValueError as exc:
+        return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
     doc_type = request.data.get('doc_type', 'DESIGN')
     folder_id = request.data.get('folder')
     path = FileStorageService.upload(file, 'documents')

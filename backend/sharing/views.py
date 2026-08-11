@@ -1,12 +1,13 @@
 """Sharing views."""
 from rest_framework import status
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
 from auth_app.permissions import has_module_permission
+from common.throttles import ShareVerifyRateThrottle
 
 from .models import ShareLink
 from .serializers import (
@@ -73,6 +74,7 @@ def share_content_view(request, token):
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
+@throttle_classes([ShareVerifyRateThrottle])
 def share_verify_view(request, token):
     try:
         share = ShareLink.objects.get(token=token)

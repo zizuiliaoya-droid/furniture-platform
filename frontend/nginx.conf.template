@@ -5,6 +5,12 @@ server {
     index index.html;
     client_max_body_size 50M;
 
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' data: blob:; connect-src 'self'; frame-src 'self' https://view.officeapps.live.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'" always;
+
     location = /healthz {
         access_log off;
         add_header Content-Type text/plain;
@@ -34,6 +40,10 @@ server {
         proxy_set_header Host ${BACKEND_HOST};
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_ssl_server_name on;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header Cross-Origin-Resource-Policy "same-origin" always;
+        add_header Content-Security-Policy "default-src 'none'; sandbox; frame-ancestors 'self'" always;
     }
 
     # Django 静态文件（admin / DRF 可浏览 API）反代到后端

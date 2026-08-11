@@ -125,6 +125,10 @@ REST_FRAMEWORK = {
     'DEFAULT_PAGINATION_CLASS': 'common.pagination.StandardPagination',
     'DEFAULT_PAGE_SIZE': 20,
     'EXCEPTION_HANDLER': 'common.exceptions.custom_exception_handler',
+    'DEFAULT_THROTTLE_RATES': {
+        'login': os.environ.get('LOGIN_THROTTLE_RATE', '10/min'),
+        'share_verify': os.environ.get('SHARE_VERIFY_THROTTLE_RATE', '20/min'),
+    },
 }
 
 # CORS
@@ -149,6 +153,7 @@ AGENT_MAX_IMPORT_SIZE = int(os.environ.get('AGENT_MAX_IMPORT_SIZE', str(10 * 102
 # 处于 Zeabur/Nginx 反向代理之后，识别原始 https 协议
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 SECURE_SSL_REDIRECT = os.environ.get('DJANGO_SECURE_SSL_REDIRECT', 'False').lower() == 'true'
+SECURE_REDIRECT_EXEMPT = [r'^api/health/$']
 SESSION_COOKIE_SECURE = os.environ.get('DJANGO_SESSION_COOKIE_SECURE', 'False').lower() == 'true'
 CSRF_COOKIE_SECURE = os.environ.get('DJANGO_CSRF_COOKIE_SECURE', 'False').lower() == 'true'
 SECURE_HSTS_SECONDS = int(os.environ.get('DJANGO_SECURE_HSTS_SECONDS', '0'))
