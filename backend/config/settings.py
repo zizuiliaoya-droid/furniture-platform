@@ -135,6 +135,8 @@ CSRF_TRUSTED_ORIGINS = [o.strip() for o in _csrf.split(',') if o.strip()]
 
 # Agent Gateway 返回给客户端的 Web 深链接根地址。
 PUBLIC_WEB_URL = os.environ.get('PUBLIC_WEB_URL', 'http://localhost')
+AGENT_CONFIRMATION_MAX_AGE = int(os.environ.get('AGENT_CONFIRMATION_MAX_AGE', '600'))
+AGENT_MAX_IMPORT_SIZE = int(os.environ.get('AGENT_MAX_IMPORT_SIZE', str(10 * 1024 * 1024)))
 
 # 处于 Zeabur/Nginx 反向代理之后，识别原始 https 协议
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')

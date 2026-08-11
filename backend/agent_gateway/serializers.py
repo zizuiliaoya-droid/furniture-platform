@@ -97,3 +97,30 @@ class AgentContentSearchQuerySerializer(serializers.Serializer):
     )
     industry = serializers.CharField(required=False, max_length=30)
     limit = serializers.IntegerField(required=False, min_value=1, max_value=20, default=10)
+
+
+class AgentQuoteDraftItemSerializer(serializers.Serializer):
+    product_id = serializers.IntegerField(min_value=1)
+    selections = serializers.DictField(
+        child=serializers.CharField(max_length=200),
+        required=False,
+        default=dict,
+    )
+    image_id = serializers.IntegerField(required=False, allow_null=True, min_value=1)
+    quantity = serializers.IntegerField(required=False, min_value=1, max_value=10000, default=1)
+
+
+class AgentQuoteDraftSerializer(serializers.Serializer):
+    title = serializers.CharField(max_length=200)
+    customer_name = serializers.CharField(max_length=200)
+    notes = serializers.CharField(required=False, allow_blank=True, max_length=5000, default='')
+    terms = serializers.CharField(required=False, allow_blank=True, max_length=5000, default='')
+    discount = serializers.DecimalField(
+        required=False,
+        max_digits=5,
+        decimal_places=2,
+        min_value=0,
+        max_value=100,
+        default=0,
+    )
+    items = AgentQuoteDraftItemSerializer(many=True, allow_empty=False, max_length=100)
