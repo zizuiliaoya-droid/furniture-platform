@@ -29,6 +29,7 @@ INSTALLED_APPS = [
     'sharing',
     'search',
     'dashboard',
+    'agent_gateway',
 ]
 
 MIDDLEWARE = [
@@ -131,6 +132,9 @@ CORS_ALLOW_CREDENTIALS = True
 # CSRF 可信源（Django admin 在 https 反代后需要）
 _csrf = os.environ.get('CSRF_TRUSTED_ORIGINS', '')
 CSRF_TRUSTED_ORIGINS = [o.strip() for o in _csrf.split(',') if o.strip()]
+
+# Agent Gateway 返回给客户端的 Web 深链接根地址。
+PUBLIC_WEB_URL = os.environ.get('PUBLIC_WEB_URL', 'http://localhost')
 
 # 处于 Zeabur/Nginx 反向代理之后，识别原始 https 协议
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')

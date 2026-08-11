@@ -15,6 +15,7 @@ urlpatterns = [
     path('api/', include('sharing.urls')),
     path('api/', include('search.urls')),
     path('api/', include('dashboard.urls')),
+    path('api/agent/', include('agent_gateway.urls')),
 ]
 
 # 始终服务媒体文件（测试环境 DEBUG=False 时也能访问上传图片）。
